@@ -98,7 +98,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Title placed directly at the top
-st.title("✈️ Simulator Session Plan & EBT Competency Builder")
+st.title("✈️ Simulator Session Plan & EBT Competency Builder V2.1")
 st.markdown("<p style='color: #64748B; font-size: 14px; margin-top: -5px;'>Advanced Flight Training & Evidence-Based Training (EBT) Scenario Optimizer</p>", unsafe_allow_html=True)
 
 # ==========================================
@@ -539,26 +539,30 @@ else:
                 st.warning(f"⚠️ Generated Total DOD ({total_dod}) exceeds Session Ceiling ({max_dod_threshold}).")
 
             # ==========================================
-            # FINE-TUNE / OVERRIDE INDIVIDUAL SLOTS
+            # FINE-TUNE / OVERRIDE INDIVIDUAL SLOTS (DOD-MATCHED)
             # ==========================================
             with st.expander("🔧 Fine-Tune Session / Override Individual Slots", expanded=False):
-                st.markdown("Select a specific slot to swap its event with an alternate available scenario from the same flight phase.")
+                st.markdown("Select a slot to swap its event. Replacement options are automatically sorted and filtered to match the slot's Flight Phase and Degree of Difficulty (DOD).")
                 
                 override_slot_idx = st.selectbox(
                     "Select Slot to Modify:",
                     options=range(len(final_df)),
-                    format_func=lambda i: f"Slot #{final_df.loc[i, 'SLOT']} – Phase {final_df.loc[i, 'PHASES']}: {final_df.loc[i, 'EVENT']}"
+                    format_func=lambda i: f"Slot #{final_df.loc[i, 'SLOT']} – Phase {final_df.loc[i, 'PHASES']} (Target DOD: {final_df.loc[i, 'DOD']}): {final_df.loc[i, 'EVENT']}"
                 )
                 
                 curr_row = final_df.loc[override_slot_idx]
                 slot_phase = curr_row["PHASES"]
+                slot_target_dod = curr_row["DOD"]
                 
+                # Filter candidates by phase, and sort them so exact DOD matches appear first
                 alt_candidates = df[df["PHASES"] == slot_phase].copy()
+                alt_candidates["dod_match_priority"] = (alt_candidates["DOD"] - slot_target_dod).abs()
+                alt_candidates = alt_candidates.sort_values(by=["dod_match_priority", "DOD"])
                 
                 new_event_choice = st.selectbox(
-                    "Choose Replacement Event:",
+                    "Choose Replacement Event (Sorted by matching DOD):",
                     options=alt_candidates["scenario_id"].tolist(),
-                    format_func=lambda sid: f"{alt_candidates[alt_candidates['scenario_id'] == sid].iloc[0]['EVENT']} (DOD: {alt_candidates[alt_candidates['scenario_id'] == sid].iloc[0]['DOD']})"
+                    format_func=lambda sid: f"[DOD {alt_candidates[alt_candidates['scenario_id'] == sid].iloc[0]['DOD']}] {alt_candidates[alt_candidates['scenario_id'] == sid].iloc[0]['EVENT']}"
                 )
                 
                 if st.button("🔄 Apply Event Override to Slot"):
