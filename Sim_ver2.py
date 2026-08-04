@@ -1,0 +1,625 @@
+import streamlit as st
+import pandas as pd
+import io
+import re
+import os
+import sys
+import difflib
+
+# ReportLab imports for PDF briefing generation
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
+st.set_page_config(
+    page_title="Flight Sim Scenario & EBT Competency Optimizer",
+    page_icon="✈️",
+    layout="wide"
+)
+
+# ==========================================
+# PROFESSIONAL CSS STYLING & ALIGNED SIDEBAR
+# ==========================================
+st.markdown("""
+<style>
+    .block-container {
+        padding-top: 1.2rem !important;
+        padding-bottom: 1rem !important;
+    }
+    .main {
+        background-color: #F8FAFC;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    h1 {
+        color: #0F172A !important;
+        font-weight: 700;
+        margin-bottom: 0px !important;
+        padding-bottom: 0px !important;
+    }
+    h4 {
+        color: #1E293B !important;
+        margin-top: 8px !important;
+        margin-bottom: 8px !important;
+        font-weight: 600;
+    }
+    /* Align sidebar content to the top by removing default top padding */
+    section[data-testid="stSidebar"] {
+        background-color: #0E2A47;
+        color: #FFFFFF;
+        min-width: 270px !important; 
+        max-width: 270px !important;
+        padding-top: 0rem !important;
+    }
+    section[data-testid="stSidebar"] > div:first-child {
+        padding-top: 0.5rem !important;
+    }
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3, 
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] .stMarkdown {
+        color: #FFFFFF !important;
+    }
+    .slot-container {
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 5px 8px;
+        border-radius: 4px;
+        margin-bottom: 4px;
+    }
+    .phase-card {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        padding: 10px 14px;
+        border-radius: 6px;
+        font-size: 12px;
+        color: #334155;
+        margin-bottom: 12px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .stButton>button {
+        background-color: #0E2A47;
+        color: white;
+        border-radius: 6px;
+        font-weight: 600;
+        border: none;
+        padding: 0.4rem 0.8rem;
+    }
+    .stButton>button:hover {
+        background-color: #1E3A8A;
+        color: white;
+    }
+    .thin-divider {
+        margin: 10px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Title placed directly at the top
+st.title("✈️ Simulator Session Plan & EBT Competency Builder")
+st.markdown("<p style='color: #64748B; font-size: 14px; margin-top: -5px;'>Advanced Flight Training & Evidence-Based Training (EBT) Scenario Optimizer</p>", unsafe_allow_html=True)
+
+# ==========================================
+# 8 FLIGHT PHASES REFERENCE GUIDE
+# ==========================================
+PHASE_NAMES = {
+    1: "Phase 1 – Pre-flight and Taxi",
+    2: "Phase 2 – Take-off",
+    3: "Phase 3 – Climb",
+    4: "Phase 4 – Cruise",
+    5: "Phase 5 – Descent",
+    6: "Phase 6 – Approach",
+    7: "Phase 7 – Landing",
+    8: "Phase 8 – Taxi and post-flight"
+}
+
+with st.expander("📖 Reference Guide: 8 EBT Flight Phases", expanded=False):
+    st.markdown("<div class='phase-card'>", unsafe_allow_html=True)
+    p_cols = st.columns(4)
+    for idx, (p_num, p_desc) in enumerate(PHASE_NAMES.items()):
+        with p_cols[idx % 4]:
+            st.markdown(f"**{p_desc}**")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ==========================================
+# GLOBAL SESSION PARAMETERS
+# ==========================================
+st.markdown("#### ⚙️ Global Session Parameters")
+p_col1, p_col2 = st.columns([1.5, 3.5])
+
+with p_col1:
+    max_dod_threshold = st.number_input("Total DOD Ceiling", min_value=1, max_value=30, value=6, step=1)
+with p_col2:
+    st.markdown("<div style='height: 32px;'></div>", unsafe_allow_html=True)
+    allow_fallback = st.checkbox("Enable Smart Fallback (use closest available DOD if exact match missing)", value=True)
+
+st.markdown("---")
+
+COMPETENCY_KEYS = {
+    "APK": "Application of Knowledge / Procedures",
+    "COM": "Communication",
+    "FPM": "Flight Path Management",
+    "FPA": "Flight Path Authority / Angle",
+    "LTW": "Leadership & Teamwork",
+    "PSD": "Problem Solving & Decision Making",
+    "SA":  "Situational Awareness",
+    "WLM": "Workload Management"
+}
+
+# ==========================================
+# SIDEBAR: SLIM SLOTS CONFIGURATION
+# ==========================================
+st.sidebar.markdown("<h3 style='margin-top: 0px; margin-bottom: 5px;'>📍 Slots Config</h3>", unsafe_allow_html=True)
+
+# Initialize slot state
+if "slot_list" not in st.session_state:
+    st.session_state.slot_list = [
+        {"phase": 1, "dod": 1, "type": "Any", "mandatory": False},
+        {"phase": 2, "dod": 2, "type": "Any", "mandatory": False},
+        {"phase": 6, "dod": 2, "type": "Any", "mandatory": False},
+        {"phase": 7, "dod": 1, "type": "Any", "mandatory": False}
+    ]
+
+c_b1, c_b2 = st.sidebar.columns(2)
+if c_b1.button("➕ Add Slot"):
+    if len(st.session_state.slot_list) < 12:
+        st.session_state.slot_list.append({"phase": 1, "dod": 1, "type": "Any", "mandatory": False})
+        st.rerun()
+
+if c_b2.button("❌ Rm Slot"):
+    if len(st.session_state.slot_list) > 1:
+        st.session_state.slot_list.pop()
+        st.rerun()
+
+st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
+
+slot_configurations = []
+for i, slot_data in enumerate(st.session_state.slot_list):
+    st.sidebar.markdown(f"<div class='slot-container'><b style='font-size:11px; color:#94A3B8;'>SLOT #{i+1}</b>", unsafe_allow_html=True)
+    sc1, sc2 = st.sidebar.columns([3, 2])
+    with sc1:
+        p_val = st.selectbox(
+            f"P{i}",
+            options=list(PHASE_NAMES.keys()),
+            index=list(PHASE_NAMES.keys()).index(slot_data["phase"]) if slot_data["phase"] in PHASE_NAMES else 0,
+            format_func=lambda x: f"Ph {x}",
+            key=f"phase_sel_{i}",
+            label_visibility="collapsed"
+        )
+    with sc2:
+        d_val = st.selectbox(
+            f"D{i}",
+            options=[1, 2, 3],
+            index=[1, 2, 3].index(slot_data["dod"]),
+            key=f"dod_sel_{i}",
+            label_visibility="collapsed"
+        )
+    
+    with st.sidebar.expander(f"⚙️ Details #{i+1}", expanded=False):
+        type_val = st.selectbox(
+            "Category",
+            options=["Any", "Technical Failure", "Non-Technical / CRM", "ATA Specific"],
+            index=["Any", "Technical Failure", "Non-Technical / CRM", "ATA Specific"].index(slot_data.get("type", "Any")),
+            key=f"type_sel_{i}"
+        )
+        ata_val = None
+        if type_val == "ATA Specific":
+            ata_val = st.number_input("ATA", min_value=11, max_value=80, value=22, key=f"ata_sel_{i}")
+        is_mandatory = st.checkbox("Pin Mandatory", value=slot_data.get("mandatory", False), key=f"mand_sel_{i}")
+
+    st.sidebar.markdown("</div>", unsafe_allow_html=True)
+
+    st.session_state.slot_list[i] = {
+        "phase": p_val,
+        "dod": d_val,
+        "type": type_val,
+        "ata": ata_val,
+        "mandatory": is_mandatory
+    }
+    
+    slot_configurations.append({
+        "slot": i + 1,
+        "phase": p_val,
+        "dod": d_val,
+        "type": type_val,
+        "ata": ata_val,
+        "mandatory": is_mandatory
+    })
+
+configured_total_dod = sum(item["dod"] for item in slot_configurations)
+if configured_total_dod > max_dod_threshold:
+    st.sidebar.warning(f"⚠️ DOD ({configured_total_dod}) > Ceiling ({max_dod_threshold})")
+else:
+    st.sidebar.success(f"✓ Target DOD: {configured_total_dod} / {max_dod_threshold}")
+
+# Sidebar Credit Footer
+st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
+st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: #94A3B8;'>Designed by Shawn Abela for KMMA 2026</div>", unsafe_allow_html=True)
+
+# ==========================================
+# HELPER: ADVANCED EVENT MATCHING
+# ==========================================
+def get_best_match(scen_title, comp_titles):
+    if not scen_title or pd.isna(scen_title): return None
+    s_clean = re.sub(r'\(Ref:[^)]+\)', '', str(scen_title), flags=re.IGNORECASE)
+    s_clean = re.sub(r'[^A-Z0-9\s]', ' ', s_clean.upper())
+    s_clean = re.sub(r'\s+', ' ', s_clean).strip()
+    
+    if scen_title in comp_titles: return scen_title
+    
+    comp_map = {}
+    for c_title in comp_titles:
+        c_clean = re.sub(r'[^A-Z0-9\s]', ' ', str(c_title).upper())
+        c_clean = re.sub(r'\s+', ' ', c_clean).strip()
+        comp_map[c_clean] = c_title
+    
+    if s_clean in comp_map:
+        return comp_map[s_clean]
+        
+    s_words = set(s_clean.split())
+    for c_clean, orig in comp_map.items():
+        c_words = set(c_clean.split())
+        if len(s_words) > 1 and s_words.issubset(c_words):
+            return orig
+
+    f_match = difflib.get_close_matches(s_clean, list(comp_map.keys()), n=1, cutoff=0.55)
+    if f_match:
+        return comp_map[f_match[0]]
+        
+    return None
+
+# ==========================================
+# HELPER: SINGLE-PAGE COMPACT PDF GENERATOR
+# ==========================================
+def generate_pdf_briefing(df_session, total_dod, max_dod, comp_scores):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=24, leftMargin=24, topMargin=24, bottomMargin=24)
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=13, leading=15, textColor=colors.HexColor('#0E2A47'), alignment=0)
+    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#555555'))
+    cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=7.5, leading=9.5)
+    cell_bold = ParagraphStyle('CellB', parent=styles['Normal'], fontSize=7.5, leading=9.5, fontName='Helvetica-Bold')
+
+    elements = []
+    
+    elements.append(Paragraph("FLIGHT SIMULATOR SESSION BRIEFING & EBT PROFILE", title_style))
+    elements.append(Paragraph(f"Generated Session Schedule | Total DOD: <b>{total_dod} / {max_dod}</b> &nbsp;&nbsp;|&nbsp;&nbsp; <i>Designed by Shawn Abela for KMMA 2026</i>", subtitle_style))
+    elements.append(Spacer(1, 3))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#0E2A47'), spaceAfter=6))
+
+    table_data = [[
+        Paragraph("<b>Slot</b>", cell_bold), Paragraph("<b>Phase</b>", cell_bold),
+        Paragraph("<b>Event / Scenario Title</b>", cell_bold), Paragraph("<b>DOD</b>", cell_bold),
+        Paragraph("<b>Competencies Flagged</b>", cell_bold)
+    ]]
+
+    for _, row in df_session.iterrows():
+        active_comps = [col for col in COMPETENCY_KEYS.keys() if col in row and pd.notna(row[col]) and float(row[col]) >= 1.0]
+        comps_str = ", ".join(active_comps) if active_comps else "Standard"
+        table_data.append([
+            Paragraph(str(row["SLOT"]), cell_style), Paragraph(str(row["PHASE_NAME"]), cell_style),
+            Paragraph(str(row["EVENT"]), cell_style), Paragraph(str(row["DOD"]), cell_style),
+            Paragraph(comps_str, cell_style)
+        ])
+
+    t = Table(table_data, colWidths=[25, 110, 240, 28, 161])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F0F4F8')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#0E2A47')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5), ('TOPPADDING', (0, 0), (-1, -1), 2.5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 5))
+    
+    if any(score > 0 for score in comp_scores.values()):
+        elements.append(Paragraph("<b>EBT COMPETENCY INTENSITY SCORECARD (SESSION TOTALS):</b>", cell_bold))
+        elements.append(Spacer(1, 2))
+        
+        comp_table_data = [[Paragraph("<b>Code</b>", cell_bold), Paragraph("<b>Competency Name</b>", cell_bold), Paragraph("<b>Score</b>", cell_bold)]]
+        for code, score in sorted(comp_scores.items(), key=lambda item: item[1], reverse=True):
+            if score > 0:
+                comp_table_data.append([
+                    Paragraph(code, cell_bold),
+                    Paragraph(COMPETENCY_KEYS.get(code, code), cell_style),
+                    Paragraph(str(int(score)), cell_bold)
+                ])
+            
+        t_comp = Table(comp_table_data, colWidths=[40, 364, 60])
+        t_comp.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#EAEAEA')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#999999')),
+            ('TOPPADDING', (0, 0), (-1, -1), 2), ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        elements.append(t_comp)
+        elements.append(Spacer(1, 5))
+
+    elements.append(Paragraph("<b>INSTRUCTOR NOTES & CREW EVALUATION RUBRIC:</b>", cell_bold))
+    elements.append(Spacer(1, 2))
+    notes_box = [
+        [Paragraph("<b>Flight Phase / Event</b>", cell_bold), Paragraph("<b>Competency / TEM Focus</b>", cell_bold), Paragraph("<b>Grade / Signature</b>", cell_bold)],
+        [Paragraph("Pre-Flight / Departure", cell_style), Paragraph("SOP Compliance, Briefings, Workload Mgmt", cell_style), Paragraph("", cell_style)],
+        [Paragraph("In-Flight / Abnormal handling", cell_style), Paragraph("Systems Knowledge, ECAM/QRH, CRM", cell_style), Paragraph("", cell_style)],
+        [Paragraph("Approach & Landing", cell_style), Paragraph("Flight Path Management, Go-Around Decision", cell_style), Paragraph("", cell_style)]
+    ]
+    t_notes = Table(notes_box, colWidths=[130, 264, 100])
+    t_notes.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#EAEAEA')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#999999')),
+        ('TOPPADDING', (0, 0), (-1, -1), 2.5), ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+    ]))
+    elements.append(t_notes)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+# ==========================================
+# PYINSTALLER RESOURCE PATH HELPER
+# ==========================================
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
+scenarios_path = resource_path("Scenarios.csv")
+competency_path = resource_path("Keypams.xlsx")
+
+if not os.path.exists(scenarios_path):
+    st.error(f"❌ Error: Could not find 'Scenarios.csv'. Looking in directory: `{resource_path('')}`. Please verify the file is in this exact folder.")
+else:
+    try:
+        try:
+            df_raw = pd.read_csv(scenarios_path, encoding="cp1252")
+        except Exception:
+            df_raw = pd.read_csv(scenarios_path, encoding="utf-8")
+
+        df_raw.columns = [str(c).strip() for c in df_raw.columns]
+
+        # Explicit mapping: Columns C through J (indices 2 through 9) correspond to Phases 1 through 8
+        if len(df_raw.columns) >= 10:
+            records = []
+            phase_col_indices = list(range(2, 10))
+            
+            for idx, row in df_raw.iterrows():
+                event = row.iloc[0]  # Column A
+                dod = row.iloc[1]    # Column B
+                ata = row['ATA'] if 'ATA' in row and pd.notna(row['ATA']) else None
+                
+                if pd.isna(event) or pd.isna(dod):
+                    continue
+                event_str = str(event).strip()
+                if len(event_str) == 1 and event_str.isalpha():
+                    continue
+                
+                for p_idx, col_idx in enumerate(phase_col_indices):
+                    if col_idx < len(row):
+                        val = row.iloc[col_idx]
+                        if pd.notna(val) and str(val).strip() != "":
+                            phase_num = p_idx + 1
+                            records.append({
+                                "EVENT": event_str,
+                                "DOD": int(float(dod)),
+                                "PHASES": phase_num,
+                                "ATA": int(float(ata)) if ata else None,
+                                "DURATION": 15
+                            })
+            df = pd.DataFrame(records)
+        else:
+            df = df_raw.copy()
+            df.columns = [str(c).strip().upper() for c in df.columns]
+            df = df.dropna(subset=["EVENT", "DOD", "PHASES"]).copy()
+            df["DOD"] = pd.to_numeric(df["DOD"], errors="coerce").astype(int)
+            df["PHASES"] = pd.to_numeric(df["PHASES"], errors="coerce").astype(int)
+            if "DURATION" not in df.columns:
+                df["DURATION"] = 15
+
+        # Integrate Competency File automatically if available
+        for c_key in COMPETENCY_KEYS.keys():
+            df[c_key] = 0.0
+
+        comp_loaded = False
+        if os.path.exists(competency_path):
+            try:
+                df_comp = pd.read_excel(competency_path)
+                df_comp.columns = [str(c).strip() for c in df_comp.columns]
+                event_col_name = df_comp.columns[0]
+                comp_cols_present = [c for c in COMPETENCY_KEYS.keys() if c in df_comp.columns]
+                
+                if comp_cols_present:
+                    comp_titles = df_comp[event_col_name].dropna().tolist()
+                    df['Matched_Comp_Event'] = df['EVENT'].apply(lambda x: get_best_match(x, comp_titles))
+                    
+                    for idx, row in df.iterrows():
+                        matched_title = row['Matched_Comp_Event']
+                        if matched_title:
+                            match_row = df_comp[df_comp[event_col_name] == matched_title]
+                            if not match_row.empty:
+                                for c_key in comp_cols_present:
+                                    try:
+                                        val = float(match_row.iloc[0][c_key])
+                                        df.loc[idx, c_key] = val if pd.notna(val) else 0.0
+                                    except (ValueError, TypeError):
+                                        pass
+                    comp_loaded = True
+            except Exception as e:
+                st.sidebar.warning(f"Warning: Could not parse Keypams.xlsx: {e}")
+
+        df["scenario_id"] = [f"SC-{i+1:02d}" for i in range(len(df))]
+        
+        st.success(f"✓ Loaded **Scenarios.csv** successfully. {'(Competency file Keypams.xlsx loaded)' if comp_loaded else ''}")
+        
+        with st.expander("📋 View Parsed Internal Scenario Matrix (Mapped from Columns C to J)", expanded=False):
+            disp_cols = ["scenario_id", "EVENT", "DOD", "PHASES"] + [k for k in COMPETENCY_KEYS.keys() if k in df.columns]
+            st.dataframe(df[disp_cols], use_container_width=True)
+
+        # Main action button
+        if st.button("⚡ Generate Simulator Profile", type="primary"):
+            selected_events = []
+            used_event_titles = set()
+            missing_slots = []
+            fallback_warnings = []
+
+            for cfg in slot_configurations:
+                slot_num = cfg["slot"]
+                target_p = cfg["phase"]
+                target_d = cfg["dod"]
+                target_type = cfg["type"]
+                target_ata = cfg["ata"]
+
+                candidates = df[
+                    (df["PHASES"] == target_p) & 
+                    (df["DOD"] == target_d) & 
+                    (~df["EVENT"].isin(used_event_titles))
+                ].copy()
+
+                if target_type == "Technical Failure":
+                    candidates = candidates[candidates["ATA"].notna()]
+                elif target_type == "Non-Technical / CRM":
+                    candidates = candidates[candidates["ATA"].isna()]
+                elif target_type == "ATA Specific" and target_ata:
+                    candidates = candidates[candidates["ATA"] == float(target_ata)]
+
+                if not candidates.empty:
+                    picked = candidates.sample(n=1).iloc[0].to_dict()
+                    picked["SLOT"] = slot_num
+                    picked["PHASE_NAME"] = PHASE_NAMES[target_p]
+                    picked["MATCH_TYPE"] = "Exact"
+                    selected_events.append(picked)
+                    used_event_titles.add(picked["EVENT"])
+                
+                elif allow_fallback:
+                    phase_candidates = df[
+                        (df["PHASES"] == target_p) & 
+                        (~df["EVENT"].isin(used_event_titles))
+                    ].copy()
+
+                    if not phase_candidates.empty:
+                        phase_candidates["dod_diff"] = (phase_candidates["DOD"] - target_d).abs()
+                        picked = phase_candidates.sort_values("dod_diff").iloc[0].to_dict()
+                        
+                        picked["SLOT"] = slot_num
+                        picked["PHASE_NAME"] = PHASE_NAMES[target_p]
+                        picked["MATCH_TYPE"] = f"Fallback (DOD {picked['DOD']})"
+                        selected_events.append(picked)
+                        used_event_titles.add(picked["EVENT"])
+
+                        fallback_warnings.append(
+                            f"Slot #{slot_num} (Phase {target_p}): Target DOD {target_d} missing → substituted DOD {picked['DOD']} ('{picked['EVENT']}')"
+                        )
+                    else:
+                        missing_slots.append(f"Slot #{slot_num}: No unique unused events exist in Phase {target_p}")
+                else:
+                    missing_slots.append(f"Slot #{slot_num}: Phase {target_p} with DOD {target_d}")
+
+            if missing_slots:
+                st.error(f"Could not fulfill profile! Issues found in: {', '.join(missing_slots)}.")
+            else:
+                st.session_state.final_df = pd.DataFrame(selected_events).sort_values("SLOT").reset_index(drop=True)
+                if fallback_warnings:
+                    for warn in fallback_warnings:
+                        st.warning(f"ℹ️ {warn}")
+                st.success("Session Profile Generated Successfully!")
+
+        # Display session and fine-tuning if generated
+        if "final_df" in st.session_state:
+            final_df = st.session_state.final_df
+            total_dod = final_df["DOD"].sum()
+            total_time = final_df["DURATION"].sum()
+
+            if total_dod > max_dod_threshold:
+                st.warning(f"⚠️ Generated Total DOD ({total_dod}) exceeds Session Ceiling ({max_dod_threshold}).")
+
+            # ==========================================
+            # FINE-TUNE / OVERRIDE INDIVIDUAL SLOTS
+            # ==========================================
+            with st.expander("🔧 Fine-Tune Session / Override Individual Slots", expanded=False):
+                st.markdown("Select a specific slot to swap its event with an alternate available scenario from the same flight phase.")
+                
+                override_slot_idx = st.selectbox(
+                    "Select Slot to Modify:",
+                    options=range(len(final_df)),
+                    format_func=lambda i: f"Slot #{final_df.loc[i, 'SLOT']} – Phase {final_df.loc[i, 'PHASES']}: {final_df.loc[i, 'EVENT']}"
+                )
+                
+                curr_row = final_df.loc[override_slot_idx]
+                slot_phase = curr_row["PHASES"]
+                
+                alt_candidates = df[df["PHASES"] == slot_phase].copy()
+                
+                new_event_choice = st.selectbox(
+                    "Choose Replacement Event:",
+                    options=alt_candidates["scenario_id"].tolist(),
+                    format_func=lambda sid: f"{alt_candidates[alt_candidates['scenario_id'] == sid].iloc[0]['EVENT']} (DOD: {alt_candidates[alt_candidates['scenario_id'] == sid].iloc[0]['DOD']})"
+                )
+                
+                if st.button("🔄 Apply Event Override to Slot"):
+                    new_ev_data = alt_candidates[alt_candidates["scenario_id"] == new_event_choice].iloc[0].to_dict()
+                    new_ev_data["SLOT"] = curr_row["SLOT"]
+                    new_ev_data["PHASE_NAME"] = curr_row["PHASE_NAME"]
+                    new_ev_data["MATCH_TYPE"] = "Manual Override"
+                    
+                    final_df.loc[override_slot_idx] = new_ev_data
+                    st.session_state.final_df = final_df
+                    st.success(f"Slot #{curr_row['SLOT']} successfully updated!")
+                    st.rerun()
+
+            st.markdown("---")
+            # Metrics display
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Selected Events", len(final_df))
+            m2.metric("Total DOD Score", f"{total_dod} / {max_dod_threshold}")
+            m3.metric("Est. Session Time", f"{total_time} mins")
+            m4.metric("DOD Buffer Remaining", max_dod_threshold - total_dod)
+
+            # Calculate competency scores based on current session
+            comp_scores = {}
+            for comp_key in COMPETENCY_KEYS.keys():
+                if comp_key in final_df.columns:
+                    comp_scores[comp_key] = int(final_df.loc[final_df['EVENT'].isin(final_df['EVENT']), comp_key].sum())
+                else:
+                    comp_scores[comp_key] = 0
+
+            # Display Competency Score Bar Chart
+            if comp_loaded and any(score > 0 for score in comp_scores.values()):
+                st.markdown("#### 📊 EBT Competency Intensity Bar Chart")
+                chart_df = pd.DataFrame(list(comp_scores.items()), columns=["Competency", "Score"]).set_index("Competency")
+                st.bar_chart(chart_df, use_container_width=True)
+
+            st.markdown("#### ✈️ Sequenced Simulator Session")
+            st.dataframe(
+                final_df[["SLOT", "EVENT", "DOD", "PHASES", "PHASE_NAME", "DURATION", "MATCH_TYPE"]],
+                use_container_width=True
+            )
+
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                csv_export = final_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Session Schedule (CSV)",
+                    data=csv_export,
+                    file_name=f"sim_session_DOD_{max_dod_threshold}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+                
+            with col_exp2:
+                pdf_data = generate_pdf_briefing(final_df, total_dod, max_dod_threshold, comp_scores)
+                st.download_button(
+                    label="📄 Download Printable PDF Briefing Sheet",
+                    data=pdf_data,
+                    file_name=f"sim_briefing_DOD_{max_dod_threshold}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+    except Exception as e:
+        st.error(f"❌ Error processing Scenarios.csv: {e}")
