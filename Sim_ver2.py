@@ -43,7 +43,6 @@ st.markdown("""
         margin-bottom: 8px !important;
         font-weight: 600;
     }
-    /* Align sidebar content to the top by removing default top padding */
     section[data-testid="stSidebar"] {
         background-color: #0E2A47;
         color: #FFFFFF;
@@ -97,7 +96,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Title placed directly at the top
 st.title("✈️ Simulator Session Plan & EBT Competency Builder")
 st.markdown("<p style='color: #64748B; font-size: 14px; margin-top: -5px;'>Advanced Flight Training & Evidence-Based Training (EBT) Scenario Optimizer</p>", unsafe_allow_html=True)
 
@@ -153,7 +151,6 @@ COMPETENCY_KEYS = {
 # ==========================================
 st.sidebar.markdown("<h3 style='margin-top: 0px; margin-bottom: 5px;'>📍 Slots Config</h3>", unsafe_allow_html=True)
 
-# Initialize slot state
 if "slot_list" not in st.session_state:
     st.session_state.slot_list = [
         {"phase": 1, "dod": 1, "type": "Any", "mandatory": False},
@@ -176,14 +173,16 @@ if c_b2.button("❌ Rm Slot"):
 st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
 
 slot_configurations = []
+ALL_PHASE_KEYS = [1, 2, 3, 4, 5, 6, 7, 8]
+
 for i, slot_data in enumerate(st.session_state.slot_list):
     st.sidebar.markdown(f"<div class='slot-container'><b style='font-size:11px; color:#94A3B8;'>SLOT #{i+1}</b>", unsafe_allow_html=True)
     sc1, sc2 = st.sidebar.columns([3, 2])
     with sc1:
         p_val = st.selectbox(
             f"P{i}",
-            options=list(PHASE_NAMES.keys()),
-            index=list(PHASE_NAMES.keys()).index(slot_data["phase"]) if slot_data["phase"] in PHASE_NAMES else 0,
+            options=ALL_PHASE_KEYS,
+            index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0,
             format_func=lambda x: f"Ph {x}",
             key=f"phase_sel_{i}",
             label_visibility="collapsed"
@@ -234,7 +233,6 @@ if configured_total_dod > max_dod_threshold:
 else:
     st.sidebar.success(f"✓ Target DOD: {configured_total_dod} / {max_dod_threshold}")
 
-# Sidebar Credit Footer
 st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
 st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: #94A3B8;'>Designed by Shawn Abela for KMMA 2026</div>", unsafe_allow_html=True)
 
@@ -284,7 +282,6 @@ def generate_pdf_briefing(df_session, total_dod, max_dod, comp_scores):
     cell_bold = ParagraphStyle('CellB', parent=styles['Normal'], fontSize=7.5, leading=9.5, fontName='Helvetica-Bold')
 
     elements = []
-    
     elements.append(Paragraph("FLIGHT SIMULATOR SESSION BRIEFING & EBT PROFILE", title_style))
     elements.append(Paragraph(f"Generated Session Schedule | Total DOD: <b>{total_dod} / {max_dod}</b> &nbsp;&nbsp;|&nbsp;&nbsp; <i>Designed by Shawn Abela for KMMA 2026</i>", subtitle_style))
     elements.append(Spacer(1, 3))
@@ -363,7 +360,6 @@ def generate_pdf_briefing(df_session, total_dod, max_dod, comp_scores):
 # PYINSTALLER RESOURCE PATH HELPER
 # ==========================================
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -384,45 +380,51 @@ else:
 
         df_raw.columns = [str(c).strip() for c in df_raw.columns]
 
-        # Explicit mapping: Columns C through J (indices 2 through 9) correspond to Phases 1 through 8
-        if len(df_raw.columns) >= 10:
-            records = []
-            phase_col_indices = list(range(2, 10))
-            
-            for idx, row in df_raw.iterrows():
-                event = row.iloc[0]  # Column A
-                dod = row.iloc[1]    # Column B
-                ata = row['ATA'] if 'ATA' in row and pd.notna(row['ATA']) else None
-                
-                if pd.isna(event) or pd.isna(dod):
-                    continue
-                event_str = str(event).strip()
-                if len(event_str) == 1 and event_str.isalpha():
-                    continue
-                
-                for p_idx, col_idx in enumerate(phase_col_indices):
-                    if col_idx < len(row):
-                        val = row.iloc[col_idx]
-                        if pd.notna(val) and str(val).strip() != "":
-                            phase_num = p_idx + 1
-                            records.append({
-                                "EVENT": event_str,
-                                "DOD": int(float(dod)),
-                                "PHASES": phase_num,
-                                "ATA": int(float(ata)) if ata else None,
-                                "DURATION": 15
-                            })
-            df = pd.DataFrame(records)
-        else:
-            df = df_raw.copy()
-            df.columns = [str(c).strip().upper() for c in df.columns]
-            df = df.dropna(subset=["EVENT", "DOD", "PHASES"]).copy()
-            df["DOD"] = pd.to_numeric(df["DOD"], errors="coerce").astype(int)
-            df["PHASES"] = pd.to_numeric(df["PHASES"], errors="coerce").astype(int)
-            if "DURATION" not in df.columns:
-                df["DURATION"] = 15
+        # Guarantee at least 10 columns exist so Phase 8 (Column J) is never truncated
+        while len(df_raw.columns) < 10:
+            df_raw[f"Col_{len(df_raw.columns)}"] = None
 
-        # Integrate Competency File automatically if available
+        master_scenarios = []
+        for idx, row in df_raw.iterrows():
+            ev = row.iloc[0]
+            d = row.iloc[1]
+            if pd.notna(ev) and pd.notna(d):
+                ev_str = str(ev).strip()
+                if not (len(ev_str) == 1 and ev_str.isalpha()):
+                    try:
+                        master_scenarios.append({"EVENT": ev_str, "DOD": int(float(d))})
+                    except ValueError:
+                        pass
+        df_master = pd.DataFrame(master_scenarios).drop_duplicates(subset=["EVENT"]).reset_index(drop=True)
+
+        records = []
+        phase_col_indices = list(range(2, 10))  # Columns C through J (Indices 2 through 9 -> Phases 1 to 8)
+        
+        for idx, row in df_raw.iterrows():
+            event = row.iloc[0]
+            dod = row.iloc[1]
+            ata = row['ATA'] if 'ATA' in row and pd.notna(row['ATA']) else None
+            
+            if pd.isna(event) or pd.isna(dod):
+                continue
+            event_str = str(event).strip()
+            if len(event_str) == 1 and event_str.isalpha():
+                continue
+            
+            for p_idx, col_idx in enumerate(phase_col_indices):
+                if col_idx < len(row):
+                    val = row.iloc[col_idx]
+                    if pd.notna(val) and str(val).strip() != "":
+                        phase_num = p_idx + 1
+                        records.append({
+                            "EVENT": event_str,
+                            "DOD": int(float(dod)),
+                            "PHASES": phase_num,
+                            "ATA": int(float(ata)) if ata else None,
+                            "DURATION": 15
+                        })
+        df = pd.DataFrame(records)
+
         for c_key in COMPETENCY_KEYS.keys():
             df[c_key] = 0.0
 
@@ -457,9 +459,89 @@ else:
         
         st.success(f"✓ Loaded **Scenarios.csv** successfully. {'(Competency file Keypams.xlsx loaded)' if comp_loaded else ''}")
         
-        with st.expander("📋 View Parsed Internal Scenario Matrix (Mapped from Columns C to J)", expanded=False):
-            disp_cols = ["scenario_id", "EVENT", "DOD", "PHASES"] + [k for k in COMPETENCY_KEYS.keys() if k in df.columns]
-            st.dataframe(df[disp_cols], use_container_width=True)
+        # ==========================================
+        # WELL-SORTED INTERNAL SCENARIO MATRIX VIEW
+        # ==========================================
+        with st.expander("📋 View Parsed Internal Scenario Matrix (Including Competency Parameters)", expanded=False):
+            active_comp_cols = [k for k in COMPETENCY_KEYS.keys() if k in df.columns]
+            disp_cols = ["scenario_id", "PHASES", "DOD", "EVENT"] + active_comp_cols
+            
+            matrix_display_df = (
+                df[disp_cols]
+                .sort_values(by=["PHASES", "DOD", "EVENT"], ascending=[True, True, True])
+                .reset_index(drop=True)
+            )
+            
+            for col in active_comp_cols:
+                matrix_display_df[col] = matrix_display_df[col].astype(int)
+
+            st.dataframe(
+                matrix_display_df,
+                use_container_width=True,
+                column_config={
+                    "scenario_id": st.column_config.TextColumn("ID", width="small"),
+                    "PHASES": st.column_config.NumberColumn("Phase", format="Phase %d"),
+                    "DOD": st.column_config.NumberColumn("DOD", format="DOD %d"),
+                    "EVENT": st.column_config.TextColumn("Scenario / Event Title", width="large"),
+                },
+                hide_index=True
+            )
+
+        # ==========================================
+        # REVERSE COMPETENCY-DRIVEN SCENARIO FINDER
+        # ==========================================
+        with st.expander("🎯 Reverse Competency-Driven Scenario Finder & Injector", expanded=False):
+            st.markdown("Select a specific **EBT Competency** to reverse-lookup all scenarios in the database that target that competency, then inject your chosen scenario into any slot.")
+            
+            c_f1, c_f2 = st.columns([2, 1])
+            with c_f1:
+                target_comp = st.selectbox(
+                    "Target EBT Competency Focus:",
+                    options=list(COMPETENCY_KEYS.keys()),
+                    format_func=lambda k: f"{k} – {COMPETENCY_KEYS[k]}"
+                )
+            with c_f2:
+                min_comp_score = st.slider("Min Intensity Score", min_value=1.0, max_value=3.0, value=1.0, step=0.5)
+
+            comp_candidates = df[df[target_comp] >= min_comp_score].copy()
+
+            if comp_candidates.empty:
+                st.warning(f"No scenarios found targeting **{target_comp}** with intensity >= {min_comp_score}.")
+            else:
+                st.markdown(f"**Found {len(comp_candidates)} matching scenarios for `{target_comp}` ({COMPETENCY_KEYS[target_comp]}):**")
+                
+                chosen_comp_scen_id = st.selectbox(
+                    "Select Matching Scenario:",
+                    options=comp_candidates["scenario_id"].tolist(),
+                    format_func=lambda sid: f"[{target_comp} Score: {comp_candidates[comp_candidates['scenario_id'] == sid].iloc[0][target_comp]}] Phase {comp_candidates[comp_candidates['scenario_id'] == sid].iloc[0]['PHASES']} | DOD {comp_candidates[comp_candidates['scenario_id'] == sid].iloc[0]['DOD']} – {comp_candidates[comp_candidates['scenario_id'] == sid].iloc[0]['EVENT']}"
+                )
+
+                if "final_df" in st.session_state:
+                    c_inj1, c_inj2 = st.columns([2, 1])
+                    with c_inj1:
+                        target_slot_to_replace = st.selectbox(
+                            "Inject into Slot #:",
+                            options=range(len(st.session_state.final_df)),
+                            format_func=lambda i: f"Slot #{st.session_state.final_df.loc[i, 'SLOT']} – Current: {st.session_state.final_df.loc[i, 'EVENT']}"
+                        )
+                    with c_inj2:
+                        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                        if st.button("🚀 Inject Scenario into Selected Slot", type="primary"):
+                            picked_row = comp_candidates[comp_candidates["scenario_id"] == chosen_comp_scen_id].iloc[0].to_dict()
+                            slot_num_val = int(st.session_state.final_df.loc[target_slot_to_replace, "SLOT"])
+                            
+                            st.session_state.final_df.loc[target_slot_to_replace, "EVENT"] = picked_row["EVENT"]
+                            st.session_state.final_df.loc[target_slot_to_replace, "DOD"] = picked_row["DOD"]
+                            st.session_state.final_df.loc[target_slot_to_replace, "PHASES"] = picked_row["PHASES"]
+                            st.session_state.final_df.loc[target_slot_to_replace, "PHASE_NAME"] = PHASE_NAMES[picked_row["PHASES"]]
+                            st.session_state.final_df.loc[target_slot_to_replace, "MATCH_TYPE"] = f"Competency ({target_comp})"
+                            
+                            for c_k in COMPETENCY_KEYS.keys():
+                                if c_k in picked_row:
+                                    st.session_state.final_df.loc[target_slot_to_replace, c_k] = picked_row[c_k]
+                            
+                            st.success(f"✓ Slot #{slot_num_val} updated to '{picked_row['EVENT']}'!")
+                            st.rerun()
 
         # Main action button
         if st.button("⚡ Generate Simulator Profile", type="primary"):
@@ -539,38 +621,53 @@ else:
                 st.warning(f"⚠️ Generated Total DOD ({total_dod}) exceeds Session Ceiling ({max_dod_threshold}).")
 
             # ==========================================
-            # FINE-TUNE / OVERRIDE INDIVIDUAL SLOTS
+            # PHASE-FILTERED OVERRIDE SECTION (COMPACT WIDTH)
             # ==========================================
-            with st.expander("🔧 Fine-Tune Session / Override Individual Slots", expanded=False):
-                st.markdown("Select a specific slot to swap its event with an alternate available scenario from the same flight phase.")
+            with st.expander("🔧 Fine-Tune Session / Override Individual Slots", expanded=True):
+                st.markdown("Select a specific slot to swap its event. Replacement options are strictly filtered to show **only failures valid for that specific phase** from the scenario matrix.")
                 
-                override_slot_idx = st.selectbox(
-                    "Select Slot to Modify:",
-                    options=range(len(final_df)),
-                    format_func=lambda i: f"Slot #{final_df.loc[i, 'SLOT']} – Phase {final_df.loc[i, 'PHASES']}: {final_df.loc[i, 'EVENT']}"
-                )
+                ft_col1, ft_col2 = st.columns([1, 1.8])
+                
+                with ft_col1:
+                    override_slot_idx = st.selectbox(
+                        "Select Slot to Modify:",
+                        options=range(len(final_df)),
+                        format_func=lambda i: f"Slot #{final_df.loc[i, 'SLOT']} – Phase {final_df.loc[i, 'PHASES']} | {final_df.loc[i, 'EVENT'][:22]}..."
+                    )
                 
                 curr_row = final_df.loc[override_slot_idx]
-                slot_phase = curr_row["PHASES"]
+                slot_num_to_modify = int(curr_row["SLOT"])
+                curr_phase = int(curr_row["PHASES"])
+
+                phase_filtered_df = df[df["PHASES"] == curr_phase].drop_duplicates(subset=["EVENT"]).reset_index(drop=True)
+
+                with ft_col2:
+                    if phase_filtered_df.empty:
+                        st.warning(f"⚠️ No scenarios found for Phase {curr_phase}.")
+                    else:
+                        new_event_title = st.selectbox(
+                            f"Choose Replacement Event (Phase {curr_phase}):",
+                            options=phase_filtered_df["EVENT"].tolist(),
+                            format_func=lambda ev_title: f"[DOD {phase_filtered_df[phase_filtered_df['EVENT'] == ev_title].iloc[0]['DOD']}] {ev_title}"
+                        )
                 
-                alt_candidates = df[df["PHASES"] == slot_phase].copy()
-                
-                new_event_choice = st.selectbox(
-                    "Choose Replacement Event:",
-                    options=alt_candidates["scenario_id"].tolist(),
-                    format_func=lambda sid: f"{alt_candidates[alt_candidates['scenario_id'] == sid].iloc[0]['EVENT']} (DOD: {alt_candidates[alt_candidates['scenario_id'] == sid].iloc[0]['DOD']})"
-                )
-                
-                if st.button("🔄 Apply Event Override to Slot"):
-                    new_ev_data = alt_candidates[alt_candidates["scenario_id"] == new_event_choice].iloc[0].to_dict()
-                    new_ev_data["SLOT"] = curr_row["SLOT"]
-                    new_ev_data["PHASE_NAME"] = curr_row["PHASE_NAME"]
-                    new_ev_data["MATCH_TYPE"] = "Manual Override"
-                    
-                    final_df.loc[override_slot_idx] = new_ev_data
-                    st.session_state.final_df = final_df
-                    st.success(f"Slot #{curr_row['SLOT']} successfully updated!")
-                    st.rerun()
+                if not phase_filtered_df.empty:
+                    if st.button("🔄 Apply Event Override to Slot", type="primary"):
+                        match_row = phase_filtered_df[phase_filtered_df["EVENT"] == new_event_title].iloc[0].to_dict()
+
+                        final_df.loc[override_slot_idx, "EVENT"] = match_row["EVENT"]
+                        final_df.loc[override_slot_idx, "DOD"] = match_row["DOD"]
+                        final_df.loc[override_slot_idx, "PHASES"] = match_row["PHASES"]
+                        final_df.loc[override_slot_idx, "PHASE_NAME"] = PHASE_NAMES[curr_phase]
+                        final_df.loc[override_slot_idx, "MATCH_TYPE"] = "Phase-Filtered Override"
+                        
+                        for c_key in COMPETENCY_KEYS.keys():
+                            if c_key in match_row:
+                                final_df.loc[override_slot_idx, c_key] = match_row[c_key]
+
+                        st.session_state.final_df = final_df
+                        st.success(f"✓ Slot #{slot_num_to_modify} successfully updated to '{new_event_title}'!")
+                        st.rerun()
 
             st.markdown("---")
             # Metrics display
@@ -580,19 +677,19 @@ else:
             m3.metric("Est. Session Time", f"{total_time} mins")
             m4.metric("DOD Buffer Remaining", max_dod_threshold - total_dod)
 
-            # Calculate competency scores based on current session
-            comp_scores = {}
+            # Calculate competency scores directly from current active session
+            comp_scores = {k: 0.0 for k in COMPETENCY_KEYS.keys()}
             for comp_key in COMPETENCY_KEYS.keys():
                 if comp_key in final_df.columns:
-                    comp_scores[comp_key] = int(final_df.loc[final_df['EVENT'].isin(final_df['EVENT']), comp_key].sum())
-                else:
-                    comp_scores[comp_key] = 0
+                    comp_scores[comp_key] = float(pd.to_numeric(final_df[comp_key], errors='coerce').fillna(0).sum())
 
-            # Display Competency Score Bar Chart
-            if comp_loaded and any(score > 0 for score in comp_scores.values()):
-                st.markdown("#### 📊 EBT Competency Intensity Bar Chart")
-                chart_df = pd.DataFrame(list(comp_scores.items()), columns=["Competency", "Score"]).set_index("Competency")
-                st.bar_chart(chart_df, use_container_width=True)
+            # Display Compact Competency Score Bar Chart
+            if any(score > 0 for score in comp_scores.values()):
+                st.markdown("#### 📊 EBT Competency Intensity Scorecard")
+                chart_col1, chart_col2 = st.columns([1.6, 1.4])
+                with chart_col1:
+                    chart_df = pd.DataFrame(list(comp_scores.items()), columns=["Competency", "Score"]).set_index("Competency")
+                    st.bar_chart(chart_df, height=210, use_container_width=True)
 
             st.markdown("#### ✈️ Sequenced Simulator Session")
             st.dataframe(
