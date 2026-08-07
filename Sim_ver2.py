@@ -100,6 +100,12 @@ st.markdown("""
     section[data-testid="stSidebar"] .stMarkdown {
         color: #FFFFFF !important;
     }
+    
+    /* Force compact font sizes in the sidebar drop-downs to prevent truncation */
+    section[data-testid="stSidebar"] div[data-baseweb="select"] * {
+        font-size: 11.5px !important;
+    }
+    
     .sidebar-header {
         font-size: 13px;
         font-weight: 700;
@@ -370,13 +376,12 @@ if btn_c2.button("❌ Remove", use_container_width=True):
     if len(st.session_state.slot_list) > 1:
         idx = len(st.session_state.slot_list) - 1
         st.session_state.slot_list.pop()
-        # Clean up session state keys to prevent ghost states
         for key in ["phase_sel_", "dod_sel_", "role_sel_", "type_sel_", "ata_sel_", "mand_sel_"]:
             if f"{key}{idx}" in st.session_state:
                 del st.session_state[f"{key}{idx}"]
         st.rerun()
 
-# Dynamic DOD Indicator (calculates from session_state widgets directly)
+# Dynamic DOD Indicator 
 current_total_dod = 0
 for i in range(len(st.session_state.slot_list)):
     current_total_dod += st.session_state.get(f"dod_sel_{i}", st.session_state.slot_list[i]["dod"])
@@ -392,11 +397,9 @@ st.sidebar.markdown("<div style='margin: 10px 0; border-bottom: 1px solid rgba(2
 
 slot_configurations = []
 
-# Loop creates robust widgets relying entirely on state keys (Fixes the reset bug)
 for i in range(len(st.session_state.slot_list)):
     slot_data = st.session_state.slot_list[i]
     
-    # Initialize default state for this slot if it doesn't exist yet
     if f"phase_sel_{i}" not in st.session_state:
         st.session_state[f"phase_sel_{i}"] = slot_data["phase"]
     if f"dod_sel_{i}" not in st.session_state:
@@ -412,7 +415,8 @@ for i in range(len(st.session_state.slot_list)):
 
     st.sidebar.markdown(f"<div class='slot-container'><div class='slot-title'>SLOT #{i+1:02d}</div>", unsafe_allow_html=True)
     
-    r1_c1, r1_c2 = st.sidebar.columns([2.6, 1.4])
+    # Adjusted Column Ratio slightly so "DOD 1" fits without truncating
+    r1_c1, r1_c2 = st.sidebar.columns([2.3, 1.7])
     with r1_c1:
         p_val = st.selectbox(
             "Phase",
@@ -453,7 +457,6 @@ for i in range(len(st.session_state.slot_list)):
     is_mandatory = st.sidebar.checkbox("Pin Exercise", key=f"mand_sel_{i}")
     st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
-    # Sync back to our array for logic parsing
     slot_data["phase"] = p_val
     slot_data["dod"] = d_val
     slot_data["role"] = role_val
@@ -593,7 +596,7 @@ def load_scenario_database(s_path, c_path):
                         
         df = pd.DataFrame(records)
         
-        # Enforce exact integer types to avoid numpy UFuncNoLoopError
+        # Enforce exact integer types
         df["DOD"] = pd.to_numeric(df["DOD"], errors='coerce').fillna(1).astype(int)
         df["PHASES"] = pd.to_numeric(df["PHASES"], errors='coerce').fillna(1).astype(int)
 
@@ -729,12 +732,10 @@ else:
     if df is None:
         st.error(f"❌ Error reading matrix file: {comp_loaded}")
     else:
-        # Generate TEM variables dynamically after loading data based on UI weather selections
         df["TEM_THREAT"], df["TEM_ERROR"] = zip(*df.apply(lambda r: derive_tem_tags(r["EVENT"], r["PHASES"], wind_spd, wind_gust, rcam_code, vis_rvr_str), axis=1))
 
         st.success(f"✓ Matrix Loaded. {'(Keypams Competency Matrix Active)' if comp_loaded else ''}")
 
-        # Sorted Internal Matrix View
         with st.expander("📋 View Parsed Internal Scenario Matrix (Sorted by Phase)", expanded=False):
             active_comp_cols = [k for k in COMPETENCY_KEYS.keys() if k in df.columns]
             disp_cols = ["scenario_id", "PHASES", "DOD", "EVENT", "TEM_THREAT", "TEM_ERROR"] + active_comp_cols
@@ -761,7 +762,6 @@ else:
                 hide_index=True
             )
 
-        # Reverse Competency Finder
         with st.expander("🎯 Reverse Competency-Driven Scenario Finder & Injector", expanded=False):
             c_f1, c_f2 = st.columns([2.2, 1])
             with c_f1:
@@ -813,7 +813,6 @@ else:
                             st.success(f"✓ Slot #{slot_num_val} updated!")
                             st.rerun()
 
-        # Generation Action
         if st.button("⚡ Generate Simulator Profile", type="primary"):
             selected_events = []
             used_event_titles = set()
@@ -842,7 +841,6 @@ else:
                 elif target_type == "ATA Specific" and target_ata:
                     candidates = candidates[candidates["ATA"] == float(target_ata)]
 
-                # Anti-repetition logic check
                 fresh_candidates = candidates[~candidates["EVENT"].isin(recent_used_set)]
                 if not fresh_candidates.empty:
                     candidates = fresh_candidates
@@ -892,7 +890,6 @@ else:
                         st.warning(f"ℹ️ {warn}")
                 st.success("Session Profile Generated Successfully!")
 
-        # Output Results View
         if "final_df" in st.session_state:
             final_df = st.session_state.final_df
             total_dod = final_df["DOD"].sum()
@@ -901,7 +898,6 @@ else:
             if total_dod > max_dod_threshold:
                 st.warning(f"⚠️ Generated Total DOD ({total_dod}) exceeds Session Ceiling ({max_dod_threshold}).")
 
-            # Compact Fine-Tune Section
             with st.container(border=True):
                 st.markdown("#### 🔧 Fine-Tune Session / Override Slots")
                 
@@ -958,14 +954,12 @@ else:
                         st.rerun()
 
             st.markdown("---")
-            # Metrics Row
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Selected Events", len(final_df))
             m2.metric("Total DOD Score", f"{total_dod} / {max_dod_threshold}")
             m3.metric("Est. Session Time", f"{total_time} mins")
             m4.metric("DOD Buffer Remaining", max_dod_threshold - total_dod)
 
-            # Competency Intensity Scorecard
             comp_scores = {k: 0.0 for k in COMPETENCY_KEYS.keys()}
             for comp_key in COMPETENCY_KEYS.keys():
                 if comp_key in final_df.columns:
@@ -985,7 +979,6 @@ else:
                 use_container_width=True
             )
 
-            # Triple Export Options
             col_exp1, col_exp2, col_exp3 = st.columns(3)
             with col_exp1:
                 csv_export = final_df.to_csv(index=False)
