@@ -15,7 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ==========================================
-# PAGE CONFIG & MODERN EXECUTIVE STYLING
+# PAGE CONFIG & HYBRID THEME STYLING
 # ==========================================
 st.set_page_config(
     page_title="Flight Sim Scenario & EBT Competency Optimizer",
@@ -38,23 +38,23 @@ st.markdown("""
     .main { background-color: #0B132B; color: #F8FAFC; }
     h1, h2, h3, h4 { color: #38BDF8 !important; font-weight: 700 !important; margin-top: 6px !important; margin-bottom: 6px !important;}
     
-    /* IOS Card Panel Styling */
+    /* IOS Card Panel Styling (Dark) */
     div[data-testid="stForm"], div[data-testid="stContainer"] {
         background-color: #1E293B !important;
         border: 1px solid #334155 !important;
         border-radius: 8px !important;
     }
-
-    /* Metrics Styling (White Background, Blue Text) */
+    
+    /* Restored Metrics Styling (White Background, Blue Text) */
     div[data-testid="stMetric"] {
         background-color: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
         border-radius: 8px !important;
         padding: 12px 16px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
     }
     div[data-testid="stMetricLabel"] * {
-        color: #475569 !important; /* Slate gray label */
+        color: #64748B !important;
         font-weight: 600 !important;
     }
     div[data-testid="stMetricValue"] {
@@ -62,10 +62,10 @@ st.markdown("""
         border: none !important;
     }
     div[data-testid="stMetricValue"] * {
-        color: #0284C7 !important; /* Bright Blue value */
+        color: #0284C7 !important;
         font-weight: 700 !important;
     }
-    
+
     .ios-card {
         background-color: #1E293B;
         border: 1px solid #334155;
@@ -73,7 +73,6 @@ st.markdown("""
         padding: 12px 16px;
         margin-bottom: 10px;
     }
-    
     .ios-label {
         font-size: 11px;
         color: #94A3B8;
@@ -81,7 +80,6 @@ st.markdown("""
         letter-spacing: 0.05em;
         font-weight: 600;
     }
-    
     .ios-value {
         font-size: 18px;
         color: #38BDF8;
@@ -102,7 +100,6 @@ st.markdown("""
     section[data-testid="stSidebar"] .stMarkdown {
         color: #FFFFFF !important;
     }
-    
     .sidebar-header {
         font-size: 13px;
         font-weight: 700;
@@ -110,7 +107,6 @@ st.markdown("""
         letter-spacing: 0.04em;
         margin-bottom: 6px;
     }
-    
     .slot-container {
         background-color: #1E293B;
         border: 1px solid #334155;
@@ -119,7 +115,6 @@ st.markdown("""
         padding: 8px 10px;
         margin-bottom: 8px;
     }
-    
     .slot-title {
         font-size: 11px;
         font-weight: 700;
@@ -127,7 +122,6 @@ st.markdown("""
         text-transform: uppercase;
         margin-bottom: 4px;
     }
-    
     .status-badge-ok {
         background-color: rgba(16, 185, 129, 0.15);
         color: #34D399;
@@ -138,7 +132,6 @@ st.markdown("""
         font-weight: 600;
         text-align: center;
     }
-    
     .status-badge-warn {
         background-color: rgba(245, 158, 11, 0.15);
         color: #FBBF24;
@@ -355,7 +348,7 @@ with tab_weather:
 ios_summary_str = f"Apt: {apt_ref} | GW: {gw_val}t (CG {gw_cg}%) | ZFW: {zfw_val}t | Fuel: {total_fuel}t | QNH: {qnh_val}hPa | Env: {ios_env_summary_str}"
 
 # ==========================================
-# SIDEBAR: SLOTS CONFIGURATION
+# ROBUST SIDEBAR: SLOTS CONFIGURATION
 # ==========================================
 st.sidebar.markdown("<div class='sidebar-header'>📍 SLOT CONFIGURATION</div>", unsafe_allow_html=True)
 
@@ -367,7 +360,6 @@ if "slot_list" not in st.session_state:
         {"phase": 7, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False}
     ]
 
-# Slot Management Controls
 btn_c1, btn_c2 = st.sidebar.columns(2)
 if btn_c1.button("➕ Add Slot", use_container_width=True):
     if len(st.session_state.slot_list) < 12:
@@ -376,32 +368,55 @@ if btn_c1.button("➕ Add Slot", use_container_width=True):
 
 if btn_c2.button("❌ Remove", use_container_width=True):
     if len(st.session_state.slot_list) > 1:
+        idx = len(st.session_state.slot_list) - 1
         st.session_state.slot_list.pop()
+        # Clean up session state keys to prevent ghost states
+        for key in ["phase_sel_", "dod_sel_", "role_sel_", "type_sel_", "ata_sel_", "mand_sel_"]:
+            if f"{key}{idx}" in st.session_state:
+                del st.session_state[f"{key}{idx}"]
         st.rerun()
 
-# Dynamic DOD Indicator
-configured_total_dod = sum(int(item["dod"]) for item in st.session_state.slot_list)
+# Dynamic DOD Indicator (calculates from session_state widgets directly)
+current_total_dod = 0
+for i in range(len(st.session_state.slot_list)):
+    current_total_dod += st.session_state.get(f"dod_sel_{i}", st.session_state.slot_list[i]["dod"])
+
 st.sidebar.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
 
-if configured_total_dod > max_dod_threshold:
-    st.sidebar.markdown(f"<div class='status-badge-warn'>⚠️ DOD Ceiling Exceeded ({configured_total_dod} / {max_dod_threshold})</div>", unsafe_allow_html=True)
+if current_total_dod > max_dod_threshold:
+    st.sidebar.markdown(f"<div class='status-badge-warn'>⚠️ DOD Ceiling Exceeded ({current_total_dod} / {max_dod_threshold})</div>", unsafe_allow_html=True)
 else:
-    st.sidebar.markdown(f"<div class='status-badge-ok'>✓ Target DOD: {configured_total_dod} / {max_dod_threshold}</div>", unsafe_allow_html=True)
+    st.sidebar.markdown(f"<div class='status-badge-ok'>✓ Target DOD: {current_total_dod} / {max_dod_threshold}</div>", unsafe_allow_html=True)
 
 st.sidebar.markdown("<div style='margin: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.12);'></div>", unsafe_allow_html=True)
 
 slot_configurations = []
 
-for i, slot_data in enumerate(st.session_state.slot_list):
+# Loop creates robust widgets relying entirely on state keys (Fixes the reset bug)
+for i in range(len(st.session_state.slot_list)):
+    slot_data = st.session_state.slot_list[i]
+    
+    # Initialize default state for this slot if it doesn't exist yet
+    if f"phase_sel_{i}" not in st.session_state:
+        st.session_state[f"phase_sel_{i}"] = slot_data["phase"]
+    if f"dod_sel_{i}" not in st.session_state:
+        st.session_state[f"dod_sel_{i}"] = slot_data["dod"]
+    if f"role_sel_{i}" not in st.session_state:
+        st.session_state[f"role_sel_{i}"] = slot_data.get("role", "PF Focus")
+    if f"type_sel_{i}" not in st.session_state:
+        st.session_state[f"type_sel_{i}"] = slot_data.get("type", "Any")
+    if f"ata_sel_{i}" not in st.session_state:
+        st.session_state[f"ata_sel_{i}"] = slot_data.get("ata", 22)
+    if f"mand_sel_{i}" not in st.session_state:
+        st.session_state[f"mand_sel_{i}"] = slot_data.get("mandatory", False)
+
     st.sidebar.markdown(f"<div class='slot-container'><div class='slot-title'>SLOT #{i+1:02d}</div>", unsafe_allow_html=True)
     
-    # Phase & DOD Row
     r1_c1, r1_c2 = st.sidebar.columns([2.6, 1.4])
     with r1_c1:
         p_val = st.selectbox(
             "Phase",
             options=ALL_PHASE_KEYS,
-            index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0,
             format_func=lambda x: f"Ph {x}: {PHASE_NAMES[x].split('–')[1].strip()}",
             key=f"phase_sel_{i}",
             label_visibility="collapsed"
@@ -410,19 +425,16 @@ for i, slot_data in enumerate(st.session_state.slot_list):
         d_val = st.selectbox(
             "DOD",
             options=[1, 2, 3],
-            index=[1, 2, 3].index(slot_data["dod"]),
             format_func=lambda x: f"DOD {x}",
             key=f"dod_sel_{i}",
             label_visibility="collapsed"
         )
 
-    # Role & Category Row
     r2_c1, r2_c2 = st.sidebar.columns([1.8, 2.2])
     with r2_c1:
         role_val = st.selectbox(
             "Role",
             options=ROLE_OPTIONS,
-            index=ROLE_OPTIONS.index(slot_data.get("role", "PF Focus")),
             key=f"role_sel_{i}",
             label_visibility="collapsed"
         )
@@ -430,27 +442,24 @@ for i, slot_data in enumerate(st.session_state.slot_list):
         type_val = st.selectbox(
             "Category",
             options=["Any", "Technical Failure", "Non-Technical / CRM", "ATA Specific"],
-            index=["Any", "Technical Failure", "Non-Technical / CRM", "ATA Specific"].index(slot_data.get("type", "Any")),
             key=f"type_sel_{i}",
             label_visibility="collapsed"
         )
 
-    # Conditional Options
     ata_val = None
     if type_val == "ATA Specific":
-        ata_val = st.sidebar.number_input("ATA Chapter", min_value=11, max_value=80, value=22, key=f"ata_sel_{i}")
+        ata_val = st.sidebar.number_input("ATA Chapter", min_value=11, max_value=80, key=f"ata_sel_{i}")
     
-    is_mandatory = st.sidebar.checkbox("Pin Exercise", value=slot_data.get("mandatory", False), key=f"mand_sel_{i}")
+    is_mandatory = st.sidebar.checkbox("Pin Exercise", key=f"mand_sel_{i}")
     st.sidebar.markdown("</div>", unsafe_allow_html=True)
 
-    st.session_state.slot_list[i] = {
-        "phase": p_val,
-        "dod": d_val,
-        "role": role_val,
-        "type": type_val,
-        "ata": ata_val,
-        "mandatory": is_mandatory
-    }
+    # Sync back to our array for logic parsing
+    slot_data["phase"] = p_val
+    slot_data["dod"] = d_val
+    slot_data["role"] = role_val
+    slot_data["type"] = type_val
+    slot_data["ata"] = ata_val
+    slot_data["mandatory"] = is_mandatory
     
     slot_configurations.append({
         "slot": i + 1,
