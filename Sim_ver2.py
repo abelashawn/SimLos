@@ -6,6 +6,7 @@ import os
 import sys
 import json
 import difflib
+import urllib.request
 from datetime import datetime
 
 # ReportLab imports for PDF briefing generation
@@ -45,7 +46,7 @@ st.markdown("""
         border-radius: 8px !important;
     }
     
-    /* Restored Metrics Styling (White Background, Blue Text) */
+    /* Metrics Styling (White Background, Blue Text) */
     div[data-testid="stMetric"] {
         background-color: #FFFFFF !important;
         border: 1px solid #E2E8F0 !important;
@@ -86,6 +87,26 @@ st.markdown("""
         font-weight: 700;
     }
 
+    /* Jeppesen Style Airport Briefing Card */
+    .jepp-card {
+        background-color: #0F172A;
+        border: 2px solid #38BDF8;
+        border-radius: 6px;
+        padding: 14px;
+        font-family: monospace;
+        color: #E2E8F0;
+        margin-top: 10px;
+        margin-bottom: 12px;
+    }
+    .jepp-header {
+        font-size: 14px;
+        font-weight: 700;
+        color: #38BDF8;
+        border-bottom: 1px dashed #334155;
+        padding-bottom: 4px;
+        margin-bottom: 8px;
+    }
+
     /* Restructured Sidebar Styling */
     section[data-testid="stSidebar"] {
         background-color: #070D1E;
@@ -101,7 +122,6 @@ st.markdown("""
         color: #FFFFFF !important;
     }
     
-    /* Force compact font sizes in the sidebar drop-downs to prevent truncation */
     section[data-testid="stSidebar"] div[data-baseweb="select"] * {
         font-size: 11.5px !important;
     }
@@ -149,7 +169,6 @@ st.markdown("""
         text-align: center;
     }
 
-    /* Button enhancements */
     .stButton>button {
         background-color: #0284C7;
         color: #FFFFFF;
@@ -200,6 +219,28 @@ COMPETENCY_KEYS = {
 ALL_PHASE_KEYS = [1, 2, 3, 4, 5, 6, 7, 8]
 ROLE_OPTIONS = ["PF Focus", "PM Focus", "Both / CRM", "Instructor Choice"]
 
+EUROPEAN_AIRPORTS = {
+    "LMML (Malta Luqa)": {"icao": "LMML", "elev": 293, "rwy": ["13", "31"], "ils": "110.50 (13)"},
+    "LFPG (Paris Charles de Gaulle)": {"icao": "LFPG", "elev": 392, "rwy": ["08R/26L", "08L/26R", "09R/27L", "09L/27R"], "ils": "109.50 (26L)"},
+    "EGLL (London Heathrow)": {"icao": "EGLL", "elev": 83, "rwy": ["09L/27R", "09R/27L"], "ils": "110.30 (27R)"},
+    "EDDF (Frankfurt)": {"icao": "EDDF", "elev": 364, "rwy": ["07C/25C", "07R/25L", "18", "07L/25R"], "ils": "111.15 (25C)"},
+    "EHAM (Amsterdam Schiphol)": {"icao": "EHAM", "elev": -11, "rwy": ["06/24", "09/27", "18C/36C", "18L/36R", "18R/36L"], "ils": "108.50 (24)"},
+    "LIRF (Rome Fiumicino)": {"icao": "LIRF", "elev": 14, "rwy": ["16R/34L", "16L/34R", "07/25"], "ils": "109.10 (16R)"},
+    "LEMD (Madrid Barajas)": {"icao": "LEMD", "elev": 2001, "rwy": ["18L/36R", "18R/36L", "14L/32R", "14R/32L"], "ils": "109.90 (36R)"},
+    "LOWW (Vienna Schwechat)": {"icao": "LOWW", "elev": 600, "rwy": ["16/34", "11/29"], "ils": "109.30 (16)"},
+    "LSZH (Zurich Kloten)": {"icao": "LSZH", "elev": 1416, "rwy": ["14/32", "16/34", "10/28"], "ils": "109.50 (14)"}
+}
+
+def fetch_live_metar(icao_code):
+    try:
+        url = f"https://aviationweather.gov/api/data/metar?ids={icao_code}&format=raw"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            metar = response.read().decode('utf-8').strip()
+            return metar if metar else "No live METAR data returned."
+    except Exception:
+        return "METAR connection unavailable (offline mode)."
+
 # ==========================================
 # ENTERPRISE CONFIGURATION TABS
 # ==========================================
@@ -243,19 +284,39 @@ with tab_ios:
             qnh_val = st.number_input("QNH (hPa)", min_value=950, max_value=1050, value=1013)
 
     with st.container(border=True):
-        st.markdown("#### 🏛️ Airport Diagram & Runways Reference")
-        a_col1, a_col2, a_col3, a_col4 = st.columns(4)
-        with a_col1:
-            apt_ref = st.text_input("Reference Airport / Rwy", value="LFPO / 24")
-        with a_col2:
-            ils_ident = st.text_input("ILS Ident / Freq", value="OLO / 110.90")
-        with a_col3:
+        st.markdown("#### 🏛️ Major European Airport Selection & Jeppesen Layout")
+        
+        sel_apt_key = st.selectbox("Select European Aerodrome", options=list(EUROPEAN_AIRPORTS.keys()))
+        apt_data = EUROPEAN_AIRPORTS[sel_apt_key]
+        
+        ac1, ac2 = st.columns(2)
+        with ac1:
+            apt_ref = st.text_input("Reference Airport / Active Rwy", value=f"{apt_data['icao']} / {apt_data['rwy'][0]}")
+            ils_ident = st.text_input("ILS Ident / Freq", value=apt_data['ils'])
+        with ac2:
             loc_course = st.number_input("Loc Course (°M)", min_value=0, max_value=360, value=241)
-        with a_col4:
-            apt_elev = st.number_input("Airport Elev (ft)", min_value=-100, max_value=14000, value=284)
+            apt_elev = st.number_input("Airport Elev (ft)", min_value=-100, max_value=14000, value=apt_data['elev'])
+
+        st.markdown(f"""
+        <div class="jepp-card">
+            <div class="jepp-header">✈️ JEPPESEN SCHEMATIC LAYOUT & BRIEFING — {sel_apt_key.upper()}</div>
+            <b>ICAO:</b> {apt_data['icao']} &nbsp;&nbsp;|&nbsp;&nbsp; <b>ELEV:</b> {apt_data['elev']} FT &nbsp;&nbsp;|&nbsp;&nbsp; <b>ILS / LOC:</b> {apt_data['ils']}<br/>
+            <b>PUBLISHED RUNWAYS:</b> {' | '.join(apt_data['rwy'])}<br/>
+            <b>SCHEMATIC ALIGNMENT:</b> [RWY {apt_data['rwy'][0]}] <==============================> [ILS GLIDESLOPE 3.0°]
+        </div>
+        """, unsafe_allow_html=True)
 
 with tab_weather:
-    st.markdown("#### 🌐 IOS Current Conditions & Environment Setup")
+    st.markdown("#### 🌐 IOS Current Conditions & Live METAR Integration")
+    
+    live_metar_str = fetch_live_metar(apt_data['icao'])
+    st.markdown(f"""
+    <div class="ios-card" style="border-left: 3px solid #38BDF8;">
+        <div class="ios-label">Live METAR Feed ({apt_data['icao']})</div>
+        <div style="font-family: monospace; color: #38BDF8; font-size: 13px; margin-top: 4px;">{live_metar_str}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     w_card1, w_card2 = st.columns(2)
     
     with w_card1:
@@ -415,7 +476,6 @@ for i in range(len(st.session_state.slot_list)):
 
     st.sidebar.markdown(f"<div class='slot-container'><div class='slot-title'>SLOT #{i+1:02d}</div>", unsafe_allow_html=True)
     
-    # Adjusted Column Ratio slightly so "DOD 1" fits without truncating
     r1_c1, r1_c2 = st.sidebar.columns([2.3, 1.7])
     with r1_c1:
         p_val = st.selectbox(
@@ -487,7 +547,6 @@ def resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-# Anti-Repetition / History Logic
 HISTORY_FILE = "session_history.json"
 def get_recent_used_events():
     if os.path.exists(HISTORY_FILE):
@@ -571,7 +630,7 @@ def load_scenario_database(s_path, c_path):
         while len(df_raw.columns) < 10: df_raw[f"Col_{len(df_raw.columns)}"] = None
 
         records = []
-        phase_col_indices = list(range(2, 10))  # Columns C through J -> Phases 1 through 8
+        phase_col_indices = list(range(2, 10)) 
         
         for idx, row in df_raw.iterrows():
             event = row.iloc[0]
@@ -595,8 +654,6 @@ def load_scenario_database(s_path, c_path):
                         })
                         
         df = pd.DataFrame(records)
-        
-        # Enforce exact integer types
         df["DOD"] = pd.to_numeric(df["DOD"], errors='coerce').fillna(1).astype(int)
         df["PHASES"] = pd.to_numeric(df["PHASES"], errors='coerce').fillna(1).astype(int)
 
