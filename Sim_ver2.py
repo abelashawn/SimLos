@@ -1132,7 +1132,105 @@ def competency_chip_row(codes):
 def get_standard_phrase_options(grade):
     return STANDARD_PHRASE_BANK.get(grade, []) + ["Custom (type below)"]
 
-# ==========================================
+# Fixed color per competency so the same code always reads the same
+# way across the flow diagram, chips, and any future chart — a stable
+# visual vocabulary rather than a color picked per-render.
+COMPETENCY_COLORS = {
+    "APK": "#0284C7", "COM": "#7C3AED", "FPA": "#0891B2", "FPM": "#059669",
+    "KNO": "#CA8A04", "LTW": "#DB2777", "PSD": "#DC2626", "SAW": "#EA580C", "WLM": "#4F46E5",
+}
+
+
+def build_ob_flow_html(sequence_data):
+    """Render a scenario's phase sequence as a connected flow — one card per
+    phase, each showing its target action and OB chips colored by
+    competency, joined by a vertical connector. This draws the exact same
+    PROGRAM_SYLLABUS_EXERCISES / SCENARIO_OB_LIBRARY structure the app
+    already grades against; it's a rendering change, not a new data model."""
+    n = len(sequence_data)
+    parts = ["<div style='padding:4px 0;'>"]
+    for idx, step in enumerate(sequence_data):
+        obs_html = ""
+        for ob in step["obs"]:
+            color = COMPETENCY_COLORS.get(ob.get("comp"), "#64748B")
+            ref_title = DOCUMENT_REFERENCES.get(ob.get("ref"), ob.get("ref", ""))
+            obs_html += (
+                f"<div style='display:flex; gap:8px; align-items:flex-start; margin-bottom:6px;'>"
+                f"<span style='flex-shrink:0; background:{color}1A; color:{color}; border:1px solid {color}55; "
+                f"padding:1px 7px; border-radius:10px; font-size:10.5px; font-weight:700; margin-top:1px;'>{ob.get('comp','')}</span>"
+                f"<span style='font-size:13px; color:var(--text-color);' title='{ref_title}'>{ob['text']}</span>"
+                f"</div>"
+            )
+        parts.append(f"""
+        <div style='background:var(--secondary-background-color); border:1px solid rgba(128,128,128,0.25);
+                    border-left:4px solid #0284C7; border-radius:8px; padding:14px 16px; margin-bottom:4px;'>
+            <div style='font-size:14.5px; font-weight:600; color:var(--text-color); margin-bottom:6px;'>{step['phase_name']}</div>
+            <div style='font-size:12.5px; opacity:0.8; margin-bottom:10px;'><b>Target action:</b> {step['pta']}</div>
+            {obs_html}
+        </div>
+        """)
+        if idx < n - 1:
+            parts.append("<div style='text-align:center; font-size:16px; color:#0284C7; margin:2px 0 8px 0;'>&#8595;</div>")
+    parts.append("</div>")
+    return "".join(parts)
+
+
+def build_competency_venn_svg(sets_dict):
+    """A true 2- or 3-circle Venn comparing the competencies exercised by
+    2-3 chosen slots. Only geometrically valid for 2-3 sets — a 4th circle
+    cannot represent every possible overlap correctly, so callers should
+    cap selection at 3 and use the session-wide bar chart for full
+    coverage instead."""
+    labels = list(sets_dict.keys())
+    n = len(labels)
+    if n not in (2, 3):
+        return "<div style='font-size:12.5px; opacity:0.7;'>Select exactly 2 or 3 slots to compare.</div>"
+
+    colors = ["#378ADD", "#1D9E75", "#D85A30"]
+    if n == 2:
+        centers = [(220, 180), (340, 180)]
+        r = 130
+        A, B = sets_dict[labels[0]], sets_dict[labels[1]]
+        only_a, only_b, both = sorted(A - B), sorted(B - A), sorted(A & B)
+        circles = "".join(
+            f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{colors[i]}" fill-opacity="0.28" stroke="{colors[i]}" stroke-width="1"/>'
+            for i, (cx, cy) in enumerate(centers)
+        )
+        text = (
+            f'<text x="150" y="70" font-size="14" font-weight="600" fill="var(--text-color)">{labels[0]}</text>'
+            f'<text x="410" y="70" font-size="14" font-weight="600" fill="var(--text-color)" text-anchor="end">{labels[1]}</text>'
+            f'<text x="175" y="185" font-size="13" fill="var(--text-color)" text-anchor="middle">{", ".join(only_a) or "—"}</text>'
+            f'<text x="385" y="185" font-size="13" fill="var(--text-color)" text-anchor="middle">{", ".join(only_b) or "—"}</text>'
+            f'<text x="280" y="185" font-size="13" font-weight="700" fill="var(--text-color)" text-anchor="middle">{", ".join(both) or "—"}</text>'
+        )
+        vh = 280
+    else:
+        centers = [(270, 190), (410, 190), (340, 310)]
+        r = 130
+        A, B, C = sets_dict[labels[0]], sets_dict[labels[1]], sets_dict[labels[2]]
+        only_a, only_b, only_c = sorted(A - B - C), sorted(B - A - C), sorted(C - A - B)
+        ab, ac, bc = sorted((A & B) - C), sorted((A & C) - B), sorted((B & C) - A)
+        abc = sorted(A & B & C)
+        circles = "".join(
+            f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{colors[i]}" fill-opacity="0.28" stroke="{colors[i]}" stroke-width="1"/>'
+            for i, (cx, cy) in enumerate(centers)
+        )
+        text = (
+            f'<text x="185" y="65" font-size="14" font-weight="600" fill="var(--text-color)">{labels[0]}</text>'
+            f'<text x="495" y="65" font-size="14" font-weight="600" fill="var(--text-color)" text-anchor="end">{labels[1]}</text>'
+            f'<text x="340" y="450" font-size="14" font-weight="600" fill="var(--text-color)" text-anchor="middle">{labels[2]}</text>'
+            f'<text x="220" y="175" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(only_a) or "—"}</text>'
+            f'<text x="460" y="175" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(only_b) or "—"}</text>'
+            f'<text x="340" y="390" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(only_c) or "—"}</text>'
+            f'<text x="340" y="150" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(ab) or "—"}</text>'
+            f'<text x="255" y="330" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(ac) or "—"}</text>'
+            f'<text x="425" y="330" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(bc) or "—"}</text>'
+            f'<text x="340" y="255" font-size="12" font-weight="700" fill="var(--text-color)" text-anchor="middle">{", ".join(abc) or "—"}</text>'
+        )
+        vh = 480
+
+    return f'<svg width="100%" viewBox="0 0 680 {vh}">{circles}{text}</svg>'
+
 # SIDEBAR CONFIGURATION
 # ==========================================
 st.sidebar.markdown("<div class='sidebar-header'>📍 SLOT CONFIGURATION</div>", unsafe_allow_html=True)
@@ -1675,19 +1773,8 @@ with tab_session:
                     st.session_state.slot_overrides[slot_num] = {"EVENT": swap_choice, "DOD": dod}
                     st.rerun()
 
-                st.markdown("""
-                <div style='background-color: var(--secondary-background-color); padding: 18px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);'>
-                    <h5 style='color: #0284C7; margin-top: 0; margin-bottom: 16px;'>⏱️ Chronological Execution Sequence & OB Markers</h5>
-                """, unsafe_allow_html=True)
-                
-                for step in sequence_data:
-                    st.markdown(f"<b style='color: var(--text-color); font-size: 15px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='margin-left: 14px; border-left: 3px solid #0284C7; padding-left: 14px; margin-bottom: 18px; margin-top: 6px;'>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='color: var(--text-color); font-size: 13.5px; margin-bottom: 10px; opacity: 0.85;'><b>Target Action (PTA):</b> {step['pta']}</div>", unsafe_allow_html=True)
-                    for ob in step['obs']:
-                        st.markdown(f"<div style='color: #10B981; font-size: 13.5px; font-weight: 600; margin-bottom: 4px;'>✓ {ob['text']} <span class='ref-badge' title='{DOCUMENT_REFERENCES.get(ob['ref'], ob['ref'])}'>{ob['ref']}</span></div>", unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:11px; opacity:0.6; margin-bottom:6px;'>&#9201;&#65039; Phase sequence &amp; OB markers</div>", unsafe_allow_html=True)
+                st.markdown(build_ob_flow_html(sequence_data), unsafe_allow_html=True)
 
                 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
                 st.markdown(f"<div style='font-size:11.5px; opacity:0.7; margin-bottom:4px;'>Competencies exercised by this scenario:</div>{competency_chip_row(row.get('COMPETENCIES', []))}", unsafe_allow_html=True)
@@ -1741,7 +1828,7 @@ with tab_session:
 
 with tab_orca:
     st.markdown("#### 📋 OPC & ORCA Workflow Suite (Uploaded Syllabus Analysis & Debrief)")
-    st.markdown("Upload your operator simulator syllabus PDF to analyze structured syllabus exercises, track 4-phase EASA Observable Behaviors (OBs), and generate dedicated debriefs and export reports based on uploaded program failures.")
+    st.markdown("Upload your operator simulator syllabus PDF to analyze structured syllabus exercises. Each Observable Behaviour below gets its own Observe → Record → Classify/Assess entry, tied to the same published 1-5 grading scale used elsewhere in the app — the exercise-level grade is derived from these, not picked separately.")
 
     with st.container(border=True):
         st.markdown("##### 📄 Simulator Program PDF Uploader & Exercise Detection")
@@ -1794,41 +1881,30 @@ with tab_orca:
             for step in PROGRAM_SYLLABUS_EXERCISES[k]["sequence"]
         )
 
-        # Scoped strictly to the currently selected exercises' own OB keys —
-        # previously this scanned ALL orc_o_/orc_r_/orc_c_/orc_a_ keys in
-        # session_state regardless of which exercises are selected right
-        # now, so leftover ticks from a *previously* selected exercise kept
-        # inflating the completion/rigor score after that exercise was
-        # deselected (numerator not scoped to the same universe as
-        # total_obs_count, the denominator).
-        checked_o = checked_r = checked_c = checked_a = 0
+        # Real counts from the new Observe/Classify-Assess controls —
+        # replaces the old tally of four generic ticks that captured
+        # nothing about what was actually observed or graded.
+        observed_count = 0
+        all_ob_grades = []
         for k in selected_ex_keys:
             for s_idx, step in enumerate(PROGRAM_SYLLABUS_EXERCISES[k]["sequence"]):
                 for ob_idx in range(len(step["obs"])):
-                    if st.session_state.get(f"orc_o_{k}_{s_idx}_{ob_idx}"): checked_o += 1
-                    if st.session_state.get(f"orc_r_{k}_{s_idx}_{ob_idx}"): checked_r += 1
-                    if st.session_state.get(f"orc_c_{k}_{s_idx}_{ob_idx}"): checked_c += 1
-                    if st.session_state.get(f"orc_a_{k}_{s_idx}_{ob_idx}"): checked_a += 1
-
-        orca_completion_pct = int((checked_o + checked_r + checked_c + checked_a) / (total_obs_count * 4) * 100) if total_obs_count > 0 else 0
-        # NOTE: this is a same-session protocol-rigor score, not "IRR" in the
-        # EASA sense. Genuine concordance (inter-rater reliability) is
-        # defined by EASA as agreement *between different instructors*
-        # grading the same reference material, tracked via an operator's
-        # Instructor Concordance Assurance Programme (ICAP) — it cannot be
-        # computed from one instructor's checklist ticks in one session.
-        orca_rigor_score = min(100, int((checked_o * 0.35 + checked_r * 0.25 + checked_c * 0.20 + checked_a * 0.20) / (total_obs_count or 1) * 100))
+                    if st.session_state.get(f"orc_observed_{k}_{s_idx}_{ob_idx}"):
+                        observed_count += 1
+                        all_ob_grades.append(st.session_state.get(f"orc_grade_{k}_{s_idx}_{ob_idx}", 3))
+        below_standard_count = sum(1 for g in all_ob_grades if g <= 2)
+        avg_ob_grade = (sum(all_ob_grades) / len(all_ob_grades)) if all_ob_grades else 0.0
 
         st.markdown("##### 📊 Uploaded Program ORCA & CBTA Real-Time Metrics")
         m1, m2, m3, m4 = st.columns(4)
         with m1: st.metric("Syllabus Modules", f"{len(selected_ex_keys)} Exercises")
         with m2: st.metric("Target OBs Tracked", f"{total_obs_count} Behaviors")
-        with m3: st.metric("ORCA Completion", f"{orca_completion_pct}%")
-        with m4: st.metric("ORCA Protocol Rigor Score", f"{orca_rigor_score}%")
-        st.markdown("<div style='font-size:10.5px; opacity:0.6; margin-top:-4px;'>This reflects how thoroughly the O-R-C-A protocol was followed <i>this session</i> — not concordance (inter-rater reliability) between instructors, which EASA defines and tracks separately via an Instructor Concordance Assurance Programme (ICAP) across multiple raters and reference scenarios.</div>", unsafe_allow_html=True)
+        with m3: st.metric("OBs Observed & Graded", f"{observed_count}/{total_obs_count}")
+        with m4: st.metric("Below-Standard OBs (≤2)", f"{below_standard_count}", delta=None if below_standard_count == 0 else "review", delta_color="inverse")
+        st.markdown(f"<div style='font-size:10.5px; opacity:0.6; margin-top:-4px;'>Average grade across observed OBs: {avg_ob_grade:.1f}/5. This reflects actual per-OB grading this session — not concordance (inter-rater reliability) between instructors, which EASA tracks separately via an Instructor Concordance Assurance Programme (ICAP) across multiple raters and reference scenarios.</div>", unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("##### 📌 Granular 4-Phase Uploaded Syllabus Exercise Breakdown & ORCA Checklist")
+        st.markdown("##### 📌 Granular 4-Phase Uploaded Syllabus Exercise Breakdown & ORCA Workflow")
 
         uploaded_grades = {}
         uploaded_notes = {}
@@ -1845,35 +1921,61 @@ with tab_orca:
                     st.markdown(f"<b style='color: #0284C7; font-size: 14px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
                     st.markdown(f"<div style='margin-left: 10px; border-left: 3px solid #0284C7; padding-left: 12px; margin-bottom: 16px; margin-top: 4px;'>", unsafe_allow_html=True)
                     st.markdown(f"<div style='font-size: 13px; opacity: 0.9; margin-bottom: 8px;'><b>Primary Target Action (PTA):</b> <i>{step['pta']}</i></div>", unsafe_allow_html=True)
-                    
-                    st.markdown("<b style='font-size:12px; opacity:0.8;'>Observable Behaviors (OBs) & ORCA Protocol:</b>", unsafe_allow_html=True)
+
+                    st.markdown("<b style='font-size:12px; opacity:0.8;'>Observable Behaviors — Observe, Record, Classify &amp; Assess:</b>", unsafe_allow_html=True)
                     for ob_idx, ob in enumerate(step["obs"]):
-                        cols = st.columns([0.06, 0.06, 0.06, 0.06, 0.76])
-                        with cols[0]: st.checkbox("O", key=f"orc_o_{e_key}_{s_idx}_{ob_idx}", help="Observation: Behavior clearly observed")
-                        with cols[1]: st.checkbox("R", key=f"orc_r_{e_key}_{s_idx}_{ob_idx}", help="Recording: FSTD telemetry / note logged")
-                        with cols[2]: st.checkbox("C", key=f"orc_c_{e_key}_{s_idx}_{ob_idx}", help="Classification: Linked to core competency")
-                        with cols[3]: st.checkbox("A", key=f"orc_a_{e_key}_{s_idx}_{ob_idx}", help="Assessment: Graded against EASA standard")
-                        with cols[4]:
-                            comp_tag = ob.get("comp", extract_ob_competency(ob["text"]) or "GEN")
+                        comp_tag = ob.get("comp", extract_ob_competency(ob["text"]) or "GEN")
+                        obs_key = f"orc_observed_{e_key}_{s_idx}_{ob_idx}"
+                        grade_key = f"orc_grade_{e_key}_{s_idx}_{ob_idx}"
+                        note_key = f"orc_note_{e_key}_{s_idx}_{ob_idx}"
+
+                        # Text on its own full-width line, controls on a
+                        # separate compact row below — a single 4-column
+                        # row (checkbox + long OB text + grade + note) only
+                        # fit on very wide screens; on anything narrower
+                        # Streamlit stacks the columns and the layout breaks.
+                        with st.container(border=True):
                             st.markdown(
-                                f"<span style='font-size: 13px;'>{ob['text']} "
+                                f"<div style='font-size: 13px; margin-bottom:6px;'>{ob['text']} "
                                 f"<span class='ref-badge'>{ob['ref']}</span> "
-                                f"<span style='background:rgba(16,185,129,0.12); color:#10B981; border:1px solid rgba(16,185,129,0.3); padding:1px 5px; border-radius:4px; font-size:10px; font-weight:700;'>{comp_tag}</span></span>", 
+                                f"<span style='background:rgba(16,185,129,0.12); color:#10B981; border:1px solid rgba(16,185,129,0.3); padding:1px 5px; border-radius:4px; font-size:10px; font-weight:700;'>{comp_tag}</span></div>",
                                 unsafe_allow_html=True
                             )
+                            ob_cols = st.columns([1, 2, 3])
+                            with ob_cols[0]:
+                                observed = st.checkbox("Observed", key=obs_key, help="Observe: was this behaviour actually witnessed this run? Leave unticked if the item wasn't triggered/applicable — it won't count against grading.")
+                            with ob_cols[1]:
+                                ob_grade = st.selectbox(
+                                    "Classify & assess", options=[5, 4, 3, 2, 1], index=2,
+                                    format_func=lambda x: f"{x} ({GRADE_LABELS[x]})",
+                                    key=grade_key, disabled=not observed, label_visibility="collapsed",
+                                    help="Classify & assess: which band this specific behaviour fell into, using the same published 1-5 scale as the rest of the app."
+                                )
+                            with ob_cols[2]:
+                                st.text_input("Record", value="", key=note_key, disabled=not observed, label_visibility="collapsed", placeholder="Record: note (optional)")
                     st.markdown("</div>", unsafe_allow_html=True)
 
-                # Individual Grading for Uploaded Syllabus Exercise
+                # The exercise-level grade is DERIVED from the per-OB
+                # entries above — the controlling (lowest) grade among
+                # observed OBs — rather than picked independently. This is
+                # the actual fix for what was wrong before: the ORCA ticks
+                # and the exercise grade were two unconnected data points.
+                ex_ob_grades = []
+                for s_idx, step in enumerate(ex_data["sequence"]):
+                    for ob_idx in range(len(step["obs"])):
+                        if st.session_state.get(f"orc_observed_{e_key}_{s_idx}_{ob_idx}"):
+                            ex_ob_grades.append(st.session_state.get(f"orc_grade_{e_key}_{s_idx}_{ob_idx}", 3))
+
                 up_g, up_n = st.columns([1, 2])
                 with up_g:
-                    uploaded_grades[e_key] = st.selectbox(
-                        f"Grade ({ex_data['title'][:25]}...)",
-                        options=[5, 4, 3, 2, 1],
-                        index=2,
-                        format_func=lambda x: f"Grade {x} ({GRADE_LABELS[x]})",
-                        key=f"up_grade_{e_key}"
-                    )
-                    st.markdown(f"<div style='font-size:10.5px; opacity:0.7; font-style:italic; margin-top:-6px;'>{GRADE_DESCRIPTORS[uploaded_grades[e_key]]}</div>", unsafe_allow_html=True)
+                    if ex_ob_grades:
+                        controlling_grade = min(ex_ob_grades)
+                        uploaded_grades[e_key] = controlling_grade
+                        st.markdown(f"<div style='font-size:13px;'><b>Controlling grade: {controlling_grade} ({GRADE_LABELS[controlling_grade]})</b></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='font-size:10.5px; opacity:0.7;'>Lowest grade among the {len(ex_ob_grades)}/{sum(len(s['obs']) for s in ex_data['sequence'])} OBs marked Observed.</div>", unsafe_allow_html=True)
+                    else:
+                        uploaded_grades[e_key] = 3
+                        st.info("Mark at least one OB as Observed above to derive a grade.")
                 with up_n:
                     up_phrase = st.selectbox(
                         f"Standardized Comment ({ex_data['title'][:25]}...)",
@@ -2009,5 +2111,28 @@ with tab_debrief:
             )
         else:
             st.markdown("<div class='status-badge-ok'>✓ All 9 core competencies graded this session</div>", unsafe_allow_html=True)
+
+        if has_main_session and len(final_df) >= 2:
+            st.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
+            st.markdown("<b>Slot Competency Overlap (Venn)</b>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size:11.5px; opacity:0.7; margin-bottom:8px;'>A true Venn only works geometrically for 2-3 sets, so this compares a handful of slots at a time rather than the whole session — use it to spot whether two or three scenarios are exercising the same competencies (redundant) or genuinely different ones (complementary). For whole-session coverage across all 9 competencies, use the bar chart above instead.</div>", unsafe_allow_html=True)
+            slot_options = {f"Slot {int(r['SLOT']):02d}: {r['EVENT']}": int(r['SLOT']) for _, r in final_df.iterrows()}
+            venn_choice = st.multiselect(
+                "Compare slots",
+                options=list(slot_options.keys()),
+                default=list(slot_options.keys())[:min(3, len(slot_options))],
+                max_selections=3,
+                key="venn_slot_choice"
+            )
+            if len(venn_choice) in (2, 3):
+                sets_dict = {}
+                for label in venn_choice:
+                    s_num = slot_options[label]
+                    demonstrated = set(st.session_state.get(f"comp_demo_{s_num}", []))
+                    short_label = label.split(":")[0]
+                    sets_dict[short_label] = demonstrated
+                st.markdown(build_competency_venn_svg(sets_dict), unsafe_allow_html=True)
+            else:
+                st.info("Select exactly 2 or 3 slots above to compare.")
     else:
         st.info("Generate a session profile in the **Session Setup** workflow area to populate debrief analytics.")
