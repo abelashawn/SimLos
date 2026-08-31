@@ -559,7 +559,7 @@ def apply_category_filter(cands, cfg):
     cat = cfg.get("type", "Any")
     if cat == "Technical Failure":
         return cands[cands["ATA"].notna()]
-    if cat == "Non-Technical / CRM":
+    if cat == "Non-Technical / CRM (Non-ATA)":
         return cands[cands["ATA"].isna()]
     if cat == "ATA Specific" and cfg.get("ata") is not None:
         return cands[cands["ATA"] == cfg["ata"]]
@@ -784,7 +784,7 @@ for i in range(len(st.session_state.slot_list)):
     p_val = st.sidebar.selectbox("Phase", options=ALL_PHASE_KEYS, index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0, format_func=lambda x: f"Ph {x}: {PHASE_NAMES[x].split('–')[1].strip()}", key=f"phase_sel_{i}", label_visibility="collapsed")
     d_val = st.sidebar.selectbox("DOD", options=[1, 2, 3], index=slot_data["dod"]-1, format_func=lambda x: f"DOD {x}", key=f"dod_sel_{i}", label_visibility="collapsed")
     role_val = st.sidebar.selectbox("Role", options=ROLE_OPTIONS, index=ROLE_OPTIONS.index(slot_data["role"]) if slot_data["role"] in ROLE_OPTIONS else 0, key=f"role_sel_{i}", label_visibility="collapsed")
-    type_val = st.sidebar.selectbox("Category", options=["Any", "Technical Failure", "Non-Technical / CRM", "ATA Specific"], key=f"type_sel_{i}", label_visibility="collapsed")
+    type_val = st.sidebar.selectbox("Category", options=["Any", "Technical Failure", "Non-Technical / CRM (Non-ATA)", "ATA Specific"], key=f"type_sel_{i}", label_visibility="collapsed")
     
     ata_val = st.sidebar.number_input("ATA Chapter", min_value=11, max_value=80, key=f"ata_sel_{i}") if type_val == "ATA Specific" else None
     comp_val = st.sidebar.selectbox("Target Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key=f"comp_sel_{i}", label_visibility="collapsed")
