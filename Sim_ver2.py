@@ -7,6 +7,12 @@ import sys
 import difflib
 import urllib.request
 
+try:
+    import pypdf
+    HAS_PYPDF = True
+except ImportError:
+    HAS_PYPDF = False
+
 # ReportLab imports for PDF briefing generation
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
@@ -37,7 +43,6 @@ st.markdown("""
     
     h1, h2, h3, h4 { color: #0284C7 !important; font-weight: 700 !important; margin-top: 6px !important; margin-bottom: 6px !important;}
     
-    /* Allow multi-row wrapping for navigation tabs */
     div[data-baseweb="tab-list"] {
         display: flex !important;
         flex-wrap: wrap !important;
@@ -62,10 +67,6 @@ st.markdown("""
         color: var(--text-color) !important;
         opacity: 0.8 !important;
         font-weight: 600 !important;
-    }
-    div[data-testid="stMetricValue"] {
-        background-color: transparent !important;
-        border: none !important;
     }
     div[data-testid="stMetricValue"] * {
         color: var(--text-color) !important;
@@ -176,10 +177,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("✈️ Simulator Session Plan & EBT Competency Optimizer")
-st.markdown("<p style='color: var(--text-color); opacity: 0.7; font-size: 14px; margin-top: -8px; font-weight: 500;'>KM Malta A320 STD2.2 / Advanced Evidence-Based Training (EBT) Optimizer</p>", unsafe_allow_html=True)
+st.markdown("<p style='color: var(--text-color); opacity: 0.7; font-size: 14px; margin-top: -8px; font-weight: 500;'>KM Malta A320 STD2.2 / Advanced Evidence-Based Training (EBT) & CBTA / OPC / LPC IRR Suite</p>", unsafe_allow_html=True)
 
 # ==========================================
-# CENTRALIZED DATA DICTIONARIES & MATRICES
+# CENTRALIZED DATA DICTIONARIES & PROGRAM MODULES
 # ==========================================
 
 DOCUMENT_REFERENCES = {
@@ -192,254 +193,210 @@ DOCUMENT_REFERENCES = {
     "OM_B": "Airline Operations Manual Part B (A320)"
 }
 
-SCENARIO_OB_MATRIX = {
-    "V1_CUT_EFATO": {
-        "keywords": ["ENGINE", "V1 CUT", "EFATO"],
-        "sequence": [
-            {
-                "phase": "1. Flight Path Stabilization (Take-off & Initial Climb)",
-                "pta": "Maintain directional control with rudder and establish single-engine climb pitch attitude.",
-                "obs": [
-                    {"text": "OB FPM 3.1: Immediate rudder input to counter asymmetric yaw; roll maintained within ±5°.", "ref": "FCTM_ABN"},
-                    {"text": "OB FPM 3.2: PM actively calls out FMA mode changes and monitors V2 trend.", "ref": "FCOM_PRO"},
-                    {"text": "OB SAW 6.2: Maintains awareness of Engine-Out SID and terrain clearance profile.", "ref": "OM_B"}
-                ]
-            },
-            {
-                "phase": "2. Core Execution & Systems Breakdown (ECAM Cycle)",
-                "pta": "Manage thrust levers symmetrically before calling memory items; execute ECAM actions systematically.",
-                "obs": [
-                    {"text": "OB APK 1.4: Strict ECAM discipline loop (cross-confirmation of Engine Master/Fire Pushbuttons).", "ref": "QRH"},
-                    {"text": "OB COM 2.4: Clear closed-loop verification callouts before moving primary switches.", "ref": "EASA_EBT"},
-                    {"text": "OB WLM 8.1: PF isolates attention on primary flight path while delegating ECAM management cleanly to the PM.", "ref": "ICAO_9995"}
-                ]
-            },
-            {
-                "phase": "3. Strategic Diversion & Decision Making",
-                "pta": "Evaluate diversion options, secure aircraft systems, and coordinate with ATC/Cabin.",
-                "obs": [
-                    {"text": "OB PSD 5.3: Formulates structured risk mitigation utilizing FORDEC or DODAR matrices.", "ref": "OM_A"},
-                    {"text": "OB SAW 6.1: Actively monitors remaining fuel flow and single-engine performance data.", "ref": "EASA_EBT"},
-                    {"text": "OB COM 2.5: Delivers clear MAYDAY declaration and structured NITS briefing to cabin crew.", "ref": "OM_A"}
-                ]
-            }
-        ]
-    },
-    "DISPATCH_MEL": {
-        "keywords": ["MEL", "CDL", "DISPATCH", "PRE-FLIGHT"],
-        "sequence": [
-            {
-                "phase": "1. Dispatch Review & Threat Assessment",
-                "pta": "Review MEL/CDL dispatch conditions, operational procedures, and performance penalties thoroughly.",
-                "obs": [
-                    {"text": "OB APK 1.1: Accurately identifies correct operational data and documentation (FCOM, QRH, MEL).", "ref": "OM_B"},
-                    {"text": "OB SAW 6.4: Correctly anticipates environmental or operational limitations based on the defect.", "ref": "EASA_EBT"}
-                ]
-            },
-            {
-                "phase": "2. Cockpit Preparation & Briefing",
-                "pta": "Ensure technical log entries and flight deck preparation checks are completed prior to taxi.",
-                "obs": [
-                    {"text": "OB APK 1.2: Strict adherence to pre-flight procedures and log entry sign-offs.", "ref": "FCOM_PRO"},
-                    {"text": "OB COM 2.5: Clearly communicates dispatch limitations and configuration constraints during the departure briefing.", "ref": "ICAO_9995"}
-                ]
-            },
-            {
-                "phase": "3. Ground Workload Management",
-                "pta": "Distribute pre-flight tasks effectively without cognitive overload.",
-                "obs": [
-                    {"text": "OB WLM 8.1: Prioritizes and distributes tasks effectively to prevent pre-flight saturation.", "ref": "EASA_EBT"},
-                    {"text": "OB LTW 7.1: Establishes a collaborative, supportive flight deck atmosphere from the start.", "ref": "EASA_EBT"}
-                ]
-            }
-        ]
-    },
-    "APPROACH_LANDING": {
-        "keywords": ["APPROACH", "ILS", "LANDING"],
-        "sequence": [
-            {
-                "phase": "1. Profile Intercept & Environmental Monitoring",
-                "pta": "Monitor lateral and vertical profile against stable approach criteria below 1,000ft AGL.",
-                "obs": [
-                    {"text": "OB SAW 6.3: Proactive monitoring of ceiling, visibility, and shifting wind components.", "ref": "OM_A"},
-                    {"text": "OB FPA 4.2: Actively monitors and verifies flight path instruments and primary flight displays.", "ref": "FCOM_PRO"}
-                ]
-            },
-            {
-                "phase": "2. Configuration & Automation Management",
-                "pta": "Actively monitor FMA changes during capture and mode transitions while configuring the aircraft.",
-                "obs": [
-                    {"text": "OB FPA 4.4: Selects appropriate automation modes for approach and anticipates target transitions.", "ref": "FCTM_ABN"},
-                    {"text": "OB APK 1.5: Exhibits precision in manual cockpit actions and configuration timing.", "ref": "EASA_EBT"}
-                ]
-            },
-            {
-                "phase": "3. Final Approach Tracking",
-                "pta": "Execute timely callouts for DA/MDA, energy state, and runway in sight.",
-                "obs": [
-                    {"text": "OB COM 2.4: Ensures vital altitude and stable approach callouts are clearly vocalized.", "ref": "FCOM_PRO"},
-                    {"text": "OB FPM 3.1: Controls the aircraft smoothly and accurately to touchdown (if manual).", "ref": "EASA_EBT"}
-                ]
-            }
-        ]
-    },
-    "WINDSHEAR_TURBULENCE": {
-        "keywords": ["WIND", "SHEAR", "TURB"],
-        "sequence": [
-            {
-                "phase": "1. Recognition & Immediate Action",
-                "pta": "Immediate recognition of meteorological hazard and energy state perturbation.",
-                "obs": [
-                    {"text": "OB SAW 6.4: Rapidly anticipates or recognizes severe windshear warnings and energy state anomalies.", "ref": "FCTM_ABN"},
-                    {"text": "OB PSD 5.1: Identifies the threat instantly without fixation on irrelevant indications.", "ref": "ICAO_9995"}
-                ]
-            },
-            {
-                "phase": "2. Escape Maneuver Execution",
-                "pta": "Apply EASA/Airbus reactive windshear escape maneuver (TOGA, max pitch attitude, wings level).",
-                "obs": [
-                    {"text": "OB FPM 3.1: Decisive application of TOGA thrust and maximum reactive pitch tracking without over-controlling.", "ref": "QRH"},
-                    {"text": "OB APK 1.4: Defers aircraft configuration changes (gear/flaps) until strictly clear of the hazard.", "ref": "FCOM_PRO"}
-                ]
-            },
-            {
-                "phase": "3. Recovery & Communication",
-                "pta": "Resume normal flight path once clear and notify ATC.",
-                "obs": [
-                    {"text": "OB COM 2.1: Immediate, concise declaration of windshear escape maneuver to Air Traffic Control.", "ref": "OM_A"},
-                    {"text": "OB WLM 8.1: Manages high-tempo workload safely during the transition back to standard flight logic.", "ref": "EASA_EBT"}
-                ]
-            }
-        ]
-    },
-    "EMERGENCY_DESCENT": {
-        "keywords": ["DEPRESSUR", "EMERGENCY DESCENT"],
-        "sequence": [
-            {
-                "phase": "1. Immediate Survival Actions",
-                "pta": "Don oxygen masks promptly and establish flight deck communication.",
-                "obs": [
-                    {"text": "OB APK 1.4: Rapid, disciplined execution of oxygen mask memory items.", "ref": "QRH"},
-                    {"text": "OB COM 2.1: Adjusts audio panels to verify clear, closed-loop inter-cockpit communication.", "ref": "FCOM_PRO"}
-                ]
-            },
-            {
-                "phase": "2. Emergency Descent Initiation",
-                "pta": "Initiate emergency descent procedure (select target altitude, heading change, and speedbrake).",
-                "obs": [
-                    {"text": "OB FPA 4.4: Rapidly manipulates FCU to establish aggressive descent vector.", "ref": "FCTM_ABN"},
-                    {"text": "OB WLM 8.3: Prioritizes flight path stabilization and altitude capture over non-essential diagnostics.", "ref": "ICAO_9995"}
-                ]
-            },
-            {
-                "phase": "3. ATC & Cabin Coordination",
-                "pta": "Coordinate ATC emergency notification and evaluate passenger oxygen requirements.",
-                "obs": [
-                    {"text": "OB COM 2.5: Delivers clear MAYDAY declaration and prompt cabin notifications.", "ref": "OM_A"},
-                    {"text": "OB SAW 6.2: Maintains continuous awareness of terrain limitations (MORA/MSA) during the descent profile.", "ref": "OM_B"}
-                ]
-            }
-        ]
-    },
-    "GENERIC_MALFUNCTION": {
-        "keywords": ["DEFAULT"],
-        "sequence": [
-            {
-                "phase": "1. Identification & Verification",
-                "pta": "Identify malfunction or specific requirements and cross-check indications.",
-                "obs": [
-                    {"text": "OB SAW 6.1: Continuous monitoring of aircraft state and operational profile.", "ref": "EASA_EBT"},
-                    {"text": "OB PSD 5.1: Identifies operational errors or unexpected malfunctions early.", "ref": "ICAO_9995"}
-                ]
-            },
-            {
-                "phase": "2. Procedure Application",
-                "pta": "Adhere strictly to company SOPs and normal/abnormal checklists.",
-                "obs": [
-                    {"text": "OB APK 1.2: Follows SOPs meticulously unless safety dictates otherwise.", "ref": "FCOM_PRO"},
-                    {"text": "OB COM 2.4: Ensures vital checklist messages are correctly understood and acknowledged.", "ref": "EASA_EBT"}
-                ]
-            },
-            {
-                "phase": "3. Operational Adjustment",
-                "pta": "Maintain effective situational awareness and adjust the flight plan as necessary.",
-                "obs": [
-                    {"text": "OB WLM 8.1: Prioritizes tasks effectively under changing conditions.", "ref": "ICAO_9995"},
-                    {"text": "OB PSD 5.4: Decides on an optimal course of action in a timely, safe manner.", "ref": "EASA_EBT"}
-                ]
-            }
-        ]
-    }
-}
-
-OPC_FAILURE_MATRIX = {
-    "V1_CUT_EFATO": {
-        "title": "Engine Failure After Take-Off (EFATO) / V1 Cut",
+PROGRAM_SYLLABUS_EXERCISES = {
+    "EX-01_EFATO": {
+        "title": "Exercise 01: Engine Failure After Take-Off (EFATO) / V1 Cut",
+        "keywords": ["EFATO", "V1 CUT", "ENGINE FAILURE", "V1"],
         "phase": 2,
-        "stressor": "Catastrophic Engine 1 (Left) Failure at V1 + 2 knots, leading to asymmetric thrust and system degradation.",
+        "stressor": "Critical Engine 1 failure at V1 + 2 kt leading to asymmetric thrust and single-engine climb profile.",
+        "cbta_focus": ["FPM", "APK", "PSD", "SAW"],
         "sequence": [
             {
                 "phase_name": "Phase 1: Flight Path Stabilization (Take-off & Initial Climb)",
                 "pta": "Maintain directional control with rudder and establish single-engine climb pitch attitude.",
                 "obs": [
-                    {"text": "OB FPM 3.1: Immediate rudder input to counter asymmetric yaw; roll kept within ±5°; SRS pitch target (~12.5°) achieved.", "ref": "FCTM_ABN"},
-                    {"text": "OB FPM 3.2: PM actively calls out FMA changes and monitors speed trends relative to V2.", "ref": "FCOM_PRO"},
-                    {"text": "OB SAW 6.2: Maintains awareness of engine-out departure procedure (EO SID) and terrain clearance profile.", "ref": "OM_B"}
+                    {"text": "OB FPM 3.1: Immediate rudder input to counter asymmetric yaw; roll kept within ±5°; SRS pitch target (~12.5°) achieved.", "ref": "FCTM_ABN", "comp": "FPM"},
+                    {"text": "OB FPM 3.2: PM actively calls out FMA changes and monitors V2 trend.", "ref": "FCOM_PRO", "comp": "FPM"},
+                    {"text": "OB FPM 3.3: Smoothly references Beta Target (blue trapezoid on PFD) to optimize sideslip.", "ref": "FCTM_ABN", "comp": "FPM"},
+                    {"text": "OB SAW 6.2: Maintains awareness of Engine-Out SID (EO SID) and terrain clearance profile.", "ref": "OM_B", "comp": "SAW"}
                 ]
             },
             {
-                "phase_name": "Phase 2: Core Execution & Systems Breakdown (ECAM Cycle)",
+                "phase_name": "Phase 2: Core Systems Management (ECAM Execution)",
                 "pta": "Manage thrust levers symmetrically before calling memory items; execute ECAM actions systematically above 400 ft AGL.",
                 "obs": [
-                    {"text": "OB APK 1.4: Strict ECAM discipline loop. PM reads line, touches Engine Master 1, pauses, asks 'Confirm Engine 1?', PF visually verifies and declares 'Confirm' before switch actuation.", "ref": "QRH"},
-                    {"text": "OB COM 2.4: Clear closed-loop verification callouts before moving primary switches.", "ref": "EASA_EBT"},
-                    {"text": "OB WLM 8.1: PF isolates attention strictly to primary flight parameters while delegating ECAM management completely to the PM.", "ref": "OM_A"}
+                    {"text": "OB APK 1.4: Strict ECAM discipline loop. PM reads line, touches switch, asks confirmation before actuation.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB APK 1.2: Adheres to approved procedures; allows ECAM to guide chronologically without premature fire pushbutton actuation.", "ref": "FCOM_PRO", "comp": "APK"},
+                    {"text": "OB COM 2.4: Clear closed-loop verification callouts before moving primary switches.", "ref": "EASA_EBT", "comp": "COM"},
+                    {"text": "OB WLM 8.1: PF isolates attention strictly to primary flight parameters while delegating ECAM management to PM.", "ref": "OM_A", "comp": "WLM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Strategic Assessment & Diversion Planning",
+                "pta": "Evaluate diversion options utilizing structured risk mitigation (FORDEC/DODAR), secure aircraft systems, and coordinate with ATC/Cabin.",
+                "obs": [
+                    {"text": "OB PSD 5.1: Identifies secondary threats caused by failure (reduced electrical/hydraulic redundancies).", "ref": "ICAO_9995", "comp": "PSD"},
+                    {"text": "OB PSD 5.3: Implements formal decision matrix (FORDEC/DODAR): weighs returning vs. diverting.", "ref": "OM_A", "comp": "PSD"},
+                    {"text": "OB SAW 6.1: Actively monitors remaining fuel flow and single-engine performance calculations.", "ref": "EASA_EBT", "comp": "SAW"},
+                    {"text": "OB COM 2.5: Delivers structured MAYDAY declaration to ATC and NITS briefing to cabin crew.", "ref": "OM_A", "comp": "COM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 4: Approach and Landing (Single Engine Terminal Environment)",
+                "pta": "Prepare for single-engine approach, program FMGS performance pages, and manage CRM authority gradients.",
+                "obs": [
+                    {"text": "OB FPA 4.1: Programs FMGS correctly for diversion airport and activates single-engine performance pages.", "ref": "FCTM_ABN", "comp": "FPA"},
+                    {"text": "OB LTW 7.1: Captain actively seeks First Officer input during single-engine landing briefing.", "ref": "OM_A", "comp": "LTW"},
+                    {"text": "OB APK 1.1: PM accurately references QRH Single-Engine Landing Performance Tables for flap/landing distance adjustments.", "ref": "QRH", "comp": "APK"}
                 ]
             }
         ]
     },
-    "DUAL_GEN_FAILURE": {
-        "title": "Dual Generator Failure / Emergency Electrical Configuration",
+    "EX-02_ENG_FIRE": {
+        "title": "Exercise 02: Engine Fire & Severe Mechanical Damage in Flight",
+        "keywords": ["FIRE", "DAMAGE", "ENGINE FIRE"],
         "phase": 3,
-        "stressor": "Total loss of main AC buses (Engines 1 and 2 generator failure), triggering emergency electrical configuration and RAT deployment.",
+        "stressor": "Engine 2 Fire warning during climb phase with high vibration indications.",
+        "cbta_focus": ["APK", "COM", "WLM", "PSD"],
         "sequence": [
             {
-                "phase_name": "Phase 1: System Recognition & Immediate Memory Items",
-                "pta": "Recognize bus unpowering, maintain flight path during transient stability loss, and manage electrical load.",
+                "phase_name": "Phase 1: Fault Identification & Flight Path Control",
+                "pta": "Maintain flight path stability and announce malfunction clearly before initiating ECAM.",
                 "obs": [
-                    {"text": "OB SAW 6.1: Rapidly identifies loss of primary displays and monitors emergency bus reversion.", "ref": "FCOM_PRO"},
-                    {"text": "OB APK 1.2: Adheres strictly to non-normal checklist priorities before attempting optional troubleshooting.", "ref": "QRH"}
+                    {"text": "OB SAW 6.1: Rapidly identifies fire warning and cross-checks engine parameters.", "ref": "FCOM_PRO", "comp": "SAW"},
+                    {"text": "OB FPA 4.2: Maintains autopilot/flight director guidance during initial malfunction callout.", "ref": "FCTM_ABN", "comp": "FPA"}
                 ]
             },
             {
-                "phase_name": "Phase 2: Configuration & Communication Management",
-                "pta": "Reference QRH for emergency electrical configuration limits and fuel pump management.",
+                "phase_name": "Phase 2: ECAM Fire Checklist & Extinguishing Agent Discharge",
+                "pta": "Perform confirm procedure for Engine Master and Engine Fire Pushbutton before discharge.",
                 "obs": [
-                    {"text": "OB COM 2.4: Ensures radio communication is established on appropriate VHF/RMP frequencies powered by emergency network.", "ref": "OM_A"},
-                    {"text": "OB PSD 5.1: Identifies secondary system degradations early without fixation on single indicators.", "ref": "FCTM_ABN"}
+                    {"text": "OB APK 1.4: Strict execution of confirm procedure for Engine Master 2 and AGENT 1/2 buttons.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB COM 2.4: Clear closed-loop response between PF and PM during critical switch guarding.", "ref": "EASA_EBT", "comp": "COM"},
+                    {"text": "OB WLM 8.3: Avoids task saturation and maintains steady monitoring of aircraft altitude.", "ref": "ICAO_9995", "comp": "WLM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Overweight / Immediate Land Decision",
+                "pta": "Assess aircraft landing weight versus max structural landing weight and evaluate fuel jettison/overweight landing procedures.",
+                "obs": [
+                    {"text": "OB PSD 5.4: Makes timely decision regarding immediate return vs. holding for overweight landing checklist.", "ref": "OM_A", "comp": "PSD"},
+                    {"text": "OB APK 1.1: References Overweight Landing Checklist in QRH when applicable.", "ref": "QRH", "comp": "APK"}
                 ]
             }
         ]
     },
-    "SE_ILS_APPROACH": {
-        "title": "Single Engine ILS Approach with Engine Fire / Severe Damage",
-        "phase": 6,
-        "stressor": "Terminal area execution of an ILS approach with one engine secured due to a prior fire warning, combined with high crosswind components.",
+    "EX-03_DUAL_GEN": {
+        "title": "Exercise 03: Dual Generator Failure / Emergency Electrical Configuration",
+        "keywords": ["DUAL GEN", "ELECTRICAL", "EMER ELEC", "RAT"],
+        "phase": 3,
+        "stressor": "Total loss of main AC buses (Generators 1 & 2 failed), triggering automatic RAT extension and emergency bus reversion.",
+        "cbta_focus": ["APK", "SAW", "FPA", "COM"],
         "sequence": [
             {
-                "phase_name": "Phase 1: Briefing & Stable Approach Setup",
-                "pta": "Revise landing briefing accounting for single-engine flap/slat constraints, missed approach routing, and higher approach speeds.",
+                "phase_name": "Phase 1: Emergency Reversion & RAT Deployment Verification",
+                "pta": "Verify RAT extension and emergency generator coupling while maintaining flight parameters on standby instruments.",
                 "obs": [
-                    {"text": "OB LTW 7.1: Captain actively encourages First Officer input during the single-engine landing briefing.", "ref": "OM_A"},
-                    {"text": "OB SAW 6.3: Proactive monitoring of energy state, sink rate, and wind corrections along final glide path.", "ref": "FCOM_PRO"}
+                    {"text": "OB SAW 6.1: Rapidly recognizes loss of primary display units and confirms RAT deployment.", "ref": "FCOM_PRO", "comp": "SAW"},
+                    {"text": "OB FPM 3.1: Stabilizes pitch and roll manually during display power transition.", "ref": "FCTM_ABN", "comp": "FPM"},
+                    {"text": "OB APK 1.2: Executes Emergency Electrical Configuration procedures without delay.", "ref": "QRH", "comp": "APK"}
                 ]
             },
             {
-                "phase_name": "Phase 2: Flare & Touchdown Execution",
-                "pta": "Manage asymmetric thrust during flare, counter drift with wing-low/crab techniques, and deploy ground spoilers/reverse thrust safely.",
+                "phase_name": "Phase 2: Communication & Systems Management",
+                "pta": "Restore communication using RMP 1 on VHF 1 and manage load shedding.",
                 "obs": [
-                    {"text": "OB FPM 3.1: Decisive rudder control during flare to ensure touchdown aligned with runway centerline.", "ref": "FCTM_ABN"},
-                    {"text": "OB APK 1.5: Precise timing of thrust lever management and directional braking control on rollout.", "ref": "FCOM_PRO"}
+                    {"text": "OB COM 2.1: Establishes VHF 1 emergency communications using audio control panel 1.", "ref": "OM_A", "comp": "COM"},
+                    {"text": "OB WLM 8.1: Systematically delegates QRH management while maintaining raw-data navigation tracking.", "ref": "ICAO_9995", "comp": "WLM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Emergency Descent & Landing Setup",
+                "pta": "Plan visual or ILS CAT I approach with gravity gear extension procedures.",
+                "obs": [
+                    {"text": "OB APK 1.4: Strict execution of Gravity Gear Extension memory items at specified speed limits.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB PSD 5.3: Evaluates weather limits for non-availability of CAT II/III capability.", "ref": "OM_B", "comp": "PSD"}
+                ]
+            }
+        ]
+    },
+    "EX-04_SE_ILS": {
+        "title": "Exercise 04: Single Engine ILS Precision Approach & Missed Approach Profile",
+        "keywords": ["ILS", "APPROACH", "SINGLE ENGINE ILS", "MISSED APPROACH"],
+        "phase": 6,
+        "stressor": "Single-engine precision ILS approach in low visibility conditions (CAT I) with crosswind and option for go-around.",
+        "cbta_focus": ["FPM", "FPA", "LTW", "SAW"],
+        "sequence": [
+            {
+                "phase_name": "Phase 1: Arrival & Descent Preparation",
+                "pta": "Conduct single-engine approach briefing, review VAPP increments, and set FCU target speeds.",
+                "obs": [
+                    {"text": "OB LTW 7.1: Captain actively encourages First Officer input during single-engine approach briefing.", "ref": "OM_A", "comp": "LTW"},
+                    {"text": "OB FPA 4.4: Correctly programs FMGS landing parameters and verifies ILS frequency/ident.", "ref": "FCOM_PRO", "comp": "FPA"}
+                ]
+            },
+            {
+                "phase_name": "Phase 2: Final Approach Intercept & Stabilization",
+                "pta": "Intercept Localizer and Glide Slope in Flap 3 configuration with single-engine thrust management.",
+                "obs": [
+                    {"text": "OB FPM 3.1: Smooth application of rudder trim and manual thrust control (if autothrust OFF).", "ref": "FCTM_ABN", "comp": "FPM"},
+                    {"text": "OB SAW 6.3: Proactive monitoring of energy state, sink rate, and wind corrections down to DA.", "ref": "FCOM_PRO", "comp": "SAW"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Flare & Touchdown / Go-Around Execution",
+                "pta": "Execute single-engine landing alignment or decisive single-engine go-around callout (TOGA / Flaps).",
+                "obs": [
+                    {"text": "OB FPM 3.1: Decisive rudder control during flare to align nose wheel with runway centerline.", "ref": "FCTM_ABN", "comp": "FPM"},
+                    {"text": "OB COM 2.4: Clear 'TOGA SRS' and 'Flaps One Step' callouts if go-around is initiated.", "ref": "FCOM_PRO", "comp": "COM"}
+                ]
+            }
+        ]
+    },
+    "EX-05_WINDSHEAR": {
+        "title": "Exercise 05: Windshear / Severe Microburst Escape Maneuver",
+        "keywords": ["WINDSHEAR", "TURBULENCE", "GUST", "ESCAPE"],
+        "phase": 2,
+        "stressor": "Predictive or Reactive Windshear warning during takeoff roll or initial climb phase.",
+        "cbta_focus": ["FPM", "SAW", "APK", "PSD"],
+        "sequence": [
+            {
+                "phase_name": "Phase 1: Windshear Recognition & Immediate Action",
+                "pta": "Recognize windshear warning or rapid air-speed drop and set TOGA thrust immediately.",
+                "obs": [
+                    {"text": "OB SAW 6.4: Rapidly recognizes reactive windshear synthetic voice warning ('WINDSHEAR').", "ref": "FCTM_ABN", "comp": "SAW"},
+                    {"text": "OB FPM 3.1: Decisive application of TOGA thrust and pitch tracking to SRS/full stick pitch limit without overcontrolling.", "ref": "QRH", "comp": "FPM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 2: Flight Path Recovery & Configuration Retention",
+                "pta": "Maintain configuration (gear/flaps unchanged) until clear of windshear condition.",
+                "obs": [
+                    {"text": "OB APK 1.4: Refrains from changing gear or flap settings while in shear conditions.", "ref": "FCOM_PRO", "comp": "APK"},
+                    {"text": "OB COM 2.1: Calls out terrain/altitude trend and reports windshear escape maneuver to ATC once clear.", "ref": "OM_A", "comp": "COM"}
+                ]
+            }
+        ]
+    },
+    "EX-06_EMER_DESCENT": {
+        "title": "Exercise 06: Rapid Cabin Depressurization & Emergency Descent Profile",
+        "keywords": ["DEPRESSURIZATION", "EMERGENCY DESCENT", "OXYGEN", "DESCENT"],
+        "phase": 4,
+        "stressor": "Loss of cabin pressure at FL370 requiring oxygen mask donning and rapid descent to FL100/MORA.",
+        "cbta_focus": ["APK", "COM", "FPA", "WLM"],
+        "sequence": [
+            {
+                "phase_name": "Phase 1: Immediate Survival Memory Items",
+                "pta": "Don crew oxygen masks (100%), establish flight deck intercom, and turn on seat belt signs.",
+                "obs": [
+                    {"text": "OB APK 1.4: Rapid donning of oxygen masks within 5 seconds and setting regulators to 100%.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB COM 2.1: Establishes clear intra-cockpit interphone communication with mask microphones ON.", "ref": "FCOM_PRO", "comp": "COM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 2: Emergency Descent Execution",
+                "pta": "Turn off airways, select target altitude (FL100/MORA), pull ALT, pull HDG, pull SPD, and extend Speedbrakes.",
+                "obs": [
+                    {"text": "OB FPA 4.4: Rapid manipulation of FCU controls to establish maximum rate descent.", "ref": "FCTM_ABN", "comp": "FPA"},
+                    {"text": "OB WLM 8.3: Smoothly deploys Speedbrakes to full without exceeding structural VMO/MMO limits.", "ref": "ICAO_9995", "comp": "WLM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: ATC Mayday & Passenger Safety Management",
+                "pta": "Broadcast MAYDAY, notify cabin crew, and monitor high terrain altitude clearances.",
+                "obs": [
+                    {"text": "OB COM 2.5: Transmits MAYDAY call specifying emergency descent and target level.", "ref": "OM_A", "comp": "COM"},
+                    {"text": "OB SAW 6.2: Verifies MORA/MSA on navigation display to prevent CFIT during descent.", "ref": "OM_B", "comp": "SAW"}
                 ]
             }
         ]
@@ -534,26 +491,9 @@ def derive_tem_tags(event_title, phase_num, w_spd, w_gust, rcam, vis):
     else: errors.append("SOP / QRH Execution")
     return " | ".join(threats), " | ".join(errors)
 
-def get_detailed_scenario_ob_breakdown(event_title, phase_num):
-    title_u = str(event_title).upper()
-    for key, data in SCENARIO_OB_MATRIX.items():
-        if key == "GENERIC_MALFUNCTION": continue
-        if any(kw in title_u for kw in data["keywords"]) or (key == "DISPATCH_MEL" and phase_num == 1) or (key == "APPROACH_LANDING" and phase_num in [6,7]):
-            return data["sequence"]
-    return SCENARIO_OB_MATRIX["GENERIC_MALFUNCTION"]["sequence"]
-
 def extract_ob_competency(ob_text):
     m = re.match(r"OB\s+([A-Z]{2,3})\s", str(ob_text))
     return m.group(1) if m and m.group(1) in COMPETENCY_KEYS else None
-
-def get_scenario_competencies(event_title, phase_num):
-    codes = set()
-    for step in get_detailed_scenario_ob_breakdown(event_title, phase_num):
-        for ob in step["obs"]:
-            code = extract_ob_competency(ob["text"])
-            if code:
-                codes.add(code)
-    return sorted(codes)
 
 def apply_category_filter(cands, cfg):
     cat = cfg.get("type", "Any")
@@ -564,12 +504,6 @@ def apply_category_filter(cands, cfg):
     if cat == "ATA Specific" and cfg.get("ata") is not None:
         return cands[cands["ATA"] == cfg["ata"]]
     return cands
-
-def apply_competency_filter(cands, target_competency):
-    if target_competency == "Any":
-        return cands
-    mask = cands.apply(lambda r: target_competency in get_scenario_competencies(r["EVENT"], r["PHASES"]), axis=1)
-    return cands[mask]
 
 def _normalize_event_name(name):
     s = str(name).upper()
@@ -620,6 +554,17 @@ with tab_session:
         with p_col2:
             st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
             allow_fallback = st.checkbox("Enable Smart Fallback (use closest available DOD if exact match missing)", value=True)
+
+    # Restored Scenario Program Generator Button inside the Session Setup Tab
+    with st.container(border=True):
+        st.markdown("#### ⚡ Scenario Generator & Program Suite")
+        st.markdown("Configure your slot parameters via the sidebar on the left, then generate the sequenced simulator session and EBT competency rubric below.")
+        if st.button("⚡ Generate Simulator Profile", type="primary", use_container_width=True):
+            st.session_state.trigger_generation = True
+
+    if st.session_state.get("trigger_generation", False):
+        # We process generation and display inline in Tab 1
+        pass
 
 with tab_env:
     with st.container(border=True):
@@ -709,41 +654,443 @@ with tab_env:
     ios_summary_str = f"Apt: {apt_ref} | GW: {gw_val}t (CG {gw_cg}%) | ZFW: {zfw_val}t | Fuel: {total_fuel}t | QNH: {qnh_val}hPa | Env: {ios_env_summary_str}"
 
 with tab_orca:
-    st.markdown("#### 📋 OPC & ORCA Workflow Suite (Inter-Rater Reliability)")
-    st.markdown("Execute standard Operator Proficiency Check failure scenarios using the standardized **Observation (O) → Recording (R) → Classification (C) → Assessment (A)** protocol.")
+    st.markdown("#### 📋 OPC & ORCA Workflow Suite (Syllabus Auto-Extraction & CBTA Analysis)")
+    st.markdown("Upload your simulator syllabus PDF below. The program automatically extracts distinct exercises, generating complete **4-phase EASA Observable Behaviors (OBs)**, primary target actions, and interactive **ORCA (Observation, Recording, Classification, Assessment)** toolkits.")
 
-    selected_opc_keys = st.multiselect(
-        "Select Active OPC Failure Modules:",
-        options=list(OPC_FAILURE_MATRIX.keys()),
-        default=["V1_CUT_EFATO", "SE_ILS_APPROACH"],
-        format_func=lambda x: OPC_FAILURE_MATRIX[x]["title"]
-    )
+    with st.container(border=True):
+        st.markdown("##### 📄 Simulator Program PDF Uploader & Exercise Detection")
+        if not HAS_PYPDF:
+            st.warning("⚠️ `pypdf` library is not installed in your current environment. Running in default exercise mode.")
+        
+        uploaded_prog_pdf = st.file_uploader("Upload Operator Simulator Syllabus / Lesson Plan (PDF)", type=["pdf"], key="prog_pdf_uploader_main")
+        
+        parsed_exercise_keys = list(PROGRAM_SYLLABUS_EXERCISES.keys())
+        
+        if uploaded_prog_pdf is not None and HAS_PYPDF:
+            try:
+                reader = pypdf.PdfReader(uploaded_prog_pdf)
+                pdf_text = ""
+                for page in reader.pages:
+                    pdf_text += page.extract_text() or ""
+                st.success(f"✓ Parsed {len(reader.pages)} page(s) from uploaded syllabus PDF.")
+                
+                detected_keys = []
+                for e_key, e_data in PROGRAM_SYLLABUS_EXERCISES.items():
+                    if any(kw in pdf_text.upper() for kw in e_data["keywords"]):
+                        detected_keys.append(e_key)
+                
+                if detected_keys:
+                    parsed_exercise_keys = detected_keys
+                    st.info(f"Identified {len(detected_keys)} specific exercise profiles directly from PDF content.")
+            except Exception as e:
+                st.error(f"Error reading PDF content: {e}")
 
-    if selected_opc_keys:
-        for f_key in selected_opc_keys:
-            mod_data = OPC_FAILURE_MATRIX[f_key]
+        st.markdown("<b>Select Exercises from Syllabus for Full OB & ORCA Analysis:</b>", unsafe_allow_html=True)
+        col_sel_all, col_sel_multi = st.columns([1, 4])
+        with col_sel_all:
+            select_all_ex = st.checkbox("Select All Exercises", value=True)
+            
+        with col_sel_multi:
+            default_selected = parsed_exercise_keys if select_all_ex else parsed_exercise_keys[:2]
+            selected_ex_keys = st.multiselect(
+                "Syllabus Exercises to Evaluate:",
+                options=parsed_exercise_keys,
+                default=default_selected,
+                format_func=lambda x: PROGRAM_SYLLABUS_EXERCISES[x]["title"],
+                label_visibility="collapsed"
+            )
+
+    if selected_ex_keys:
+        total_obs_count = sum(
+            len(step["obs"]) 
+            for k in selected_ex_keys 
+            for step in PROGRAM_SYLLABUS_EXERCISES[k]["sequence"]
+        )
+        
+        checked_o = sum(1 for k in st.session_state if k.startswith("orc_o_") and st.session_state[k])
+        checked_r = sum(1 for k in st.session_state if k.startswith("orc_r_") and st.session_state[k])
+        checked_c = sum(1 for k in st.session_state if k.startswith("orc_c_") and st.session_state[k])
+        checked_a = sum(1 for k in st.session_state if k.startswith("orc_a_") and st.session_state[k])
+        
+        orca_completion_pct = int((checked_o + checked_r + checked_c + checked_a) / (total_obs_count * 4) * 100) if total_obs_count > 0 else 0
+        irr_score = min(100, int((checked_o * 0.35 + checked_r * 0.25 + checked_c * 0.20 + checked_a * 0.20) / (total_obs_count or 1) * 100))
+
+        st.markdown("##### 📊 Automated ORCA & CBTA Real-Time Metrics")
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.metric("Selected Modules", f"{len(selected_ex_keys)} Exercises")
+        with m2: st.metric("Target OBs Tracked", f"{total_obs_count} Behaviors")
+        with m3: st.metric("ORCA Completion", f"{orca_completion_pct}%")
+        with m4: st.metric("IRR Concordance Index", f"{irr_score}%")
+
+        st.markdown("---")
+        st.markdown("##### 📌 Granular 4-Phase Exercise Breakdown & ORCA Checklist")
+
+        for e_key in selected_ex_keys:
+            ex_data = PROGRAM_SYLLABUS_EXERCISES[e_key]
             with st.container(border=True):
-                st.markdown(f"##### 📌 {mod_data['title']} (Phase {mod_data['phase']})")
-                st.markdown(f"<div style='font-size: 13px; opacity: 0.85; margin-bottom: 10px;'><b>Stressor:</b> {mod_data['stressor']}</div>", unsafe_allow_html=True)
+                st.markdown(f"#### ✈️ {ex_data['title']}")
+                st.markdown(f"<div style='font-size: 13px; margin-bottom: 4px;'><b>Operational Stressor:</b> {ex_data['stressor']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 13px; color: #0284C7; font-weight: 600; margin-bottom: 12px;'>🎯 CBTA Competency Targets: {', '.join(ex_data['cbta_focus'])}</div>", unsafe_allow_html=True)
 
-                for s_idx, step in enumerate(mod_data["sequence"]):
-                    st.markdown(f"<b style='color: #0284C7; font-size: 13.5px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='margin-left: 10px; border-left: 2px solid #0284C7; padding-left: 10px; margin-bottom: 12px;'>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='font-size: 12.5px; opacity: 0.8; margin-bottom: 6px;'><b>PTA:</b> {step['pta']}</div>", unsafe_allow_html=True)
+                for s_idx, step in enumerate(ex_data["sequence"]):
+                    st.markdown(f"<b style='color: #0284C7; font-size: 14px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='margin-left: 10px; border-left: 3px solid #0284C7; padding-left: 12px; margin-bottom: 16px; margin-top: 4px;'>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size: 13px; opacity: 0.9; margin-bottom: 8px;'><b>Primary Target Action (PTA):</b> <i>{step['pta']}</i></div>", unsafe_allow_html=True)
                     
+                    st.markdown("<b style='font-size:12px; opacity:0.8;'>Observable Behaviors (OBs) & ORCA Protocol:</b>", unsafe_allow_html=True)
                     for ob_idx, ob in enumerate(step["obs"]):
-                        cols = st.columns([0.05, 0.05, 0.05, 0.85])
-                        with cols[0]: st.checkbox("O", key=f"orc_o_{f_key}_{s_idx}_{ob_idx}", help="Observation")
-                        with cols[1]: st.checkbox("R", key=f"orc_r_{f_key}_{s_idx}_{ob_idx}", help="Recording")
-                        with cols[2]: st.checkbox("C", key=f"orc_c_{f_key}_{s_idx}_{ob_idx}", help="Classification")
-                        with cols[3]: st.markdown(f"<span style='font-size: 13px;'>{ob['text']} <span class='ref-badge'>{ob['ref']}</span></span>", unsafe_allow_html=True)
+                        cols = st.columns([0.06, 0.06, 0.06, 0.06, 0.76])
+                        with cols[0]: st.checkbox("O", key=f"orc_o_{e_key}_{s_idx}_{ob_idx}", help="Observation: Behavior clearly observed")
+                        with cols[1]: st.checkbox("R", key=f"orc_r_{e_key}_{s_idx}_{ob_idx}", help="Recording: FSTD telemetry / note logged")
+                        with cols[2]: st.checkbox("C", key=f"orc_c_{e_key}_{s_idx}_{ob_idx}", help="Classification: Linked to core competency")
+                        with cols[3]: st.checkbox("A", key=f"orc_a_{e_key}_{s_idx}_{ob_idx}", help="Assessment: Graded against EASA standard")
+                        with cols[4]:
+                            comp_tag = ob.get("comp", extract_ob_competency(ob["text"]) or "GEN")
+                            st.markdown(
+                                f"<span style='font-size: 13px;'>{ob['text']} "
+                                f"<span class='ref-badge'>{ob['ref']}</span> "
+                                f"<span style='background:rgba(16,185,129,0.12); color:#10B981; border:1px solid rgba(16,185,129,0.3); padding:1px 5px; border-radius:4px; font-size:10px; font-weight:700;'>{comp_tag}</span></span>", 
+                                unsafe_allow_html=True
+                            )
                     st.markdown("</div>", unsafe_allow_html=True)
     else:
-        st.info("Select at least one OPC failure module above to load the ORCA checklist workflow.")
+        st.info("Select at least one exercise from the uploaded program syllabus above to view the detailed OB & ORCA analysis.")
 
 with tab_selector:
     st.markdown("#### 🎯 Interactive Simulator Scenario Builder & Selector")
     st.markdown("Configure slots via the sidebar, then browse the full scenario matrix here once it loads below — filter it, and see exactly which competencies each scenario targets before you generate a session.")
+
+with tab_debrief:
+    st.markdown("#### 📊 Session Debrief — Competency Coverage & Standardized Summary")
+    if "final_df" in st.session_state:
+        final_df = st.session_state.final_df
+        total_dod = final_df["DOD"].sum()
+        
+        comp_grades = {c: [] for c in COMPETENCY_KEYS}
+        for _, row in final_df.iterrows():
+            slot_num = int(row["SLOT"])
+            g = st.session_state.get(f"grade_slot_{slot_num}", 3)
+            for c in st.session_state.get("slot_competencies", {}).get(slot_num, []):
+                if g is not None: comp_grades[c].append(g)
+
+        cov_col1, cov_col2 = st.columns([1.3, 1])
+        with cov_col1:
+            st.markdown("<b>Average Grade by Competency</b>", unsafe_allow_html=True)
+            chart_df = pd.DataFrame({
+                "Competency": list(COMPETENCY_KEYS.keys()),
+                "Avg Grade": [sum(v) / len(v) if v else 0 for v in comp_grades.values()],
+                "Times Demonstrated": [len(v) for v in comp_grades.values()],
+            }).set_index("Competency")
+            st.bar_chart(chart_df["Avg Grade"])
+        with cov_col2:
+            st.markdown("<b>Coverage Count</b>", unsafe_allow_html=True)
+            st.dataframe(chart_df, use_container_width=True)
+    else:
+        st.info("Generate a session profile in the **Session Setup** workflow area to populate debrief analytics.")
+
+# ==========================================
+# DATA LOADING & GENERATION LOGIC (TAB 1 INTEGRATION)
+# ==========================================
+def resource_path(relative_path):
+    try: base_path = sys._MEIPASS
+    except Exception: base_path = os.path.dirname(os.path.abspath(__file__))
+    local_path = os.path.join(base_path, relative_path)
+    if os.path.exists(local_path): return local_path
+    parent_path = os.path.join(os.path.dirname(base_path), relative_path)
+    return parent_path if os.path.exists(parent_path) else local_path
+
+scenarios_source = uploaded_scen if 'uploaded_scen' in locals() and uploaded_scen is not None else resource_path("Scenarios.csv")
+competency_source = uploaded_comp if 'uploaded_comp' in locals() and uploaded_comp is not None else (resource_path("Keypams.xlsx") if os.path.exists(resource_path("Keypams.xlsx")) else None)
+
+@st.cache_data(show_spinner="Loading and caching matrix scenarios...")
+def load_scenario_database(s_source, c_source):
+    try:
+        df_raw = pd.read_csv(s_source, encoding="cp1252") if os.path.exists(str(s_source)) or hasattr(s_source, 'read') else pd.read_csv(s_source, encoding="utf-8")
+        df_raw.columns = [str(c).strip() for c in df_raw.columns]
+        while len(df_raw.columns) < 10: df_raw[f"Col_{len(df_raw.columns)}"] = None
+
+        records = []
+        for idx, row in df_raw.iterrows():
+            event, dod, ata = row.iloc[0], row.iloc[1], row.get('ATA', None)
+            if pd.isna(event) or pd.isna(dod) or len(str(event).strip()) <= 2: continue
+            for p_idx, col_idx in enumerate(range(2, 10)):
+                if col_idx < len(row):
+                    val = row.iloc[col_idx]
+                    if pd.notna(val) and str(val).strip() != "":
+                        records.append({"EVENT": str(event).strip(), "DOD": int(float(dod)), "PHASES": p_idx + 1, "ATA": int(float(ata)) if pd.notna(ata) else None, "DURATION": 15})
+        df = pd.DataFrame(records)
+        df["scenario_id"] = [f"SC-{i+1:02d}" for i in range(len(df))]
+
+        match_stats = {"keypams_loaded": False, "matched_events": 0, "total_events": df["EVENT"].nunique() if not df.empty else 0}
+
+        comp_lookup = {}
+        if c_source is not None:
+            try:
+                df_comp = pd.read_excel(c_source)
+                df_comp.columns = [str(c).strip() for c in df_comp.columns]
+                if "SA" in df_comp.columns and "SAW" not in df_comp.columns:
+                    df_comp = df_comp.rename(columns={"SA": "SAW"})
+                comp_cols = [c for c in COMPETENCY_KEYS.keys() if c in df_comp.columns]
+                if comp_cols and "Event" in df_comp.columns:
+                    for _, crow in df_comp.iterrows():
+                        k_event = str(crow["Event"])
+                        norm_k = _normalize_event_name(k_event)
+                        active_comps = [c for c in comp_cols if pd.notna(crow[c]) and float(crow[c]) >= 1]
+                        comp_lookup[norm_k] = active_comps
+                    match_stats["keypams_loaded"] = True
+            except Exception:
+                pass
+
+        norm_keys = list(comp_lookup.keys())
+        matched_events = set()
+
+        def resolve_competencies(ev, phase):
+            codes = set()
+            ev_upper = str(ev).upper()
+            for ex_key, ex_data in PROGRAM_SYLLABUS_EXERCISES.items():
+                if any(kw in ev_upper for kw in ex_data["keywords"]):
+                    codes.update(ex_data["cbta_focus"])
+            
+            if comp_lookup:
+                norm_ev = _normalize_event_name(ev)
+                hit = comp_lookup.get(norm_ev)
+                if hit is None:
+                    tokens_ev = set(norm_ev.split())
+                    for k in norm_keys:
+                        tokens_k = set(k.split())
+                        if len(tokens_ev & tokens_k) >= 2 and len(tokens_ev & tokens_k) / max(len(tokens_ev), len(tokens_k)) > 0.45:
+                            hit = comp_lookup[k]
+                            break
+                if hit is None:
+                    close = difflib.get_close_matches(norm_ev, norm_keys, n=1, cutoff=0.5)
+                    if close:
+                        hit = comp_lookup[close[0]]
+                if hit:
+                    matched_events.add(ev)
+                    codes.update(hit)
+            return sorted(codes) if codes else ["FPM", "APK"]
+
+        df["COMPETENCIES"] = df.apply(lambda r: resolve_competencies(r["EVENT"], r["PHASES"]), axis=1)
+        match_stats["matched_events"] = len(matched_events)
+        return df, match_stats
+    except Exception as e:
+        return None, str(e)
+
+def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_dod, max_dod, mode, capt, fo, sim_id_val, ios_info):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=11, leading=13, textColor=colors.HexColor('#0284C7'))
+    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=colors.HexColor('#555555'))
+    cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=6.5, leading=8.5)
+    cell_bold = ParagraphStyle('CellB', parent=styles['Normal'], fontSize=6.5, leading=8.5, fontName='Helvetica-Bold')
+
+    elements = [
+        Paragraph(f"KM MALTA AIRLINES — SIMULATOR PERFORMANCE & EBT GRADING RECORD ({mode.upper()})", title_style),
+        Paragraph(f"<b>Crew:</b> {capt} & {fo} &nbsp;|&nbsp; <b>Device:</b> {sim_id_val} &nbsp;|&nbsp; <b>Total DOD:</b> {total_dod}/{max_dod}", subtitle_style),
+        Paragraph(f"<b>IOS Setup Config:</b> <i>{ios_info}</i>", subtitle_style),
+        Spacer(1, 4),
+        HRFlowable(width="100%", thickness=1, color=colors.HexColor('#0284C7'), spaceAfter=4)
+    ]
+
+    table_data = [[
+        Paragraph("<b>Slot</b>", cell_bold), Paragraph("<b>Phase / Event</b>", cell_bold),
+        Paragraph("<b>Role / DOD</b>", cell_bold), Paragraph("<b>Target Actions & Observable Behaviors (OBs)</b>", cell_bold),
+        Paragraph("<b>Grade (1-5) & Notes</b>", cell_bold)
+    ]]
+
+    for _, row in df_session.iterrows():
+        slot_id = int(row["SLOT"])
+        
+        seq_data = PROGRAM_SYLLABUS_EXERCISES.get("EX-01_EFATO", {})["sequence"]
+        for ex_key, ex_val in PROGRAM_SYLLABUS_EXERCISES.items():
+            if any(kw in str(row['EVENT']).upper() for kw in ex_val["keywords"]):
+                seq_data = ex_val["sequence"]
+                break
+
+        combined_details = ""
+        for step in seq_data:
+            combined_details += f"<b>{step['phase_name']}</b><br/><i>Action:</i> {step['pta']}<br/>"
+            for ob in step['obs']:
+                combined_details += f"<font color='#006600'>✓ {ob['text']}</font> <i>[{ob['ref']}]</i><br/>"
+            combined_details += "<br/>"
+
+        phase_event_str = f"<b>{row['PHASE_NAME']}</b><br/>{row['EVENT']}"
+        role_dod_str = f"{row.get('ROLE','PF')}<br/>DOD {row['DOD']}"
+        
+        grade_val = grades_dict.get(slot_id, 3)
+        note_val = notes_dict.get(slot_id, "Standard performance.")
+        comps_val = comp_dict.get(slot_id, [])
+        comps_str = ", ".join(comps_val) if comps_val else "—"
+        grade_str = f"<b>Grade: {grade_val}/5</b><br/><i>{GRADE_DESCRIPTORS.get(grade_val, '')}</i><br/><b>Competencies:</b> {comps_str}<br/><b>Notes:</b> {note_val}"
+
+        table_data.append([
+            Paragraph(str(slot_id), cell_style),
+            Paragraph(phase_event_str, cell_style),
+            Paragraph(role_dod_str, cell_style),
+            Paragraph(combined_details, cell_style),
+            Paragraph(grade_str, cell_style)
+        ])
+
+    t = Table(table_data, colWidths=[24, 105, 52, 195, 162])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F0F4F8')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#0284C7')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3), ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+    ]))
+    elements.extend([t])
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+df, match_stats = load_scenario_database(scenarios_source, competency_source)
+if df is not None:
+    df["TEM_THREAT"], df["TEM_ERROR"] = zip(*df.apply(lambda r: derive_tem_tags(r["EVENT"], r["PHASES"], 0, 0, rcam_code, vis_rvr_str), axis=1))
+    
+    if st.session_state.get("trigger_generation", False):
+        selected_events = []
+        used_titles = set()
+        for cfg in slot_configurations:
+            if cfg.get("mandatory") and cfg["phase"] == 2:
+                forced_match = df[(df["PHASES"] == 2) & (df["DOD"] == cfg["dod"])]
+                if not forced_match.empty:
+                    picked = forced_match.iloc[0].to_dict()
+                else:
+                    picked = {"EVENT": "Engine Failure After V1 (SIM-EFATO-01)", "DOD": cfg["dod"], "PHASES": 2, "scenario_id": "SC-FORCED", "COMPETENCIES": ["FPM", "APK", "PSD"]}
+                picked["SLOT"] = cfg["slot"]
+                picked["ROLE"] = cfg["role"]
+                picked["PHASE_NAME"] = PHASE_NAMES[cfg["phase"]]
+                selected_events.append(picked)
+                used_titles.add(picked["EVENT"])
+                continue
+
+            cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
+            cands = apply_category_filter(cands, cfg)
+            if cands.empty and allow_fallback:
+                cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
+            if not cands.empty:
+                picked = cands.sample(n=1).iloc[0].to_dict()
+                picked["SLOT"] = cfg["slot"]
+                picked["ROLE"] = cfg["role"]
+                picked["PHASE_NAME"] = PHASE_NAMES[cfg["phase"]]
+                selected_events.append(picked)
+                used_titles.add(picked["EVENT"])
+        st.session_state.final_df = pd.DataFrame(selected_events).sort_values("SLOT").reset_index(drop=True)
+        st.session_state.slot_overrides = {}
+        st.session_state.slot_competencies = {}
+        st.session_state.trigger_generation = False
+        st.success("Session Profile Generated!")
+
+    if "final_df" in st.session_state:
+        with tab_session:
+            if "slot_overrides" not in st.session_state:
+                st.session_state.slot_overrides = {}
+
+            final_df = st.session_state.final_df
+            for idx, row in final_df.iterrows():
+                s_id = int(row["SLOT"])
+                if s_id in st.session_state.slot_overrides:
+                    ov_data = st.session_state.slot_overrides[s_id]
+                    final_df.loc[idx, "EVENT"] = ov_data["EVENT"]
+                    final_df.loc[idx, "DOD"] = ov_data["DOD"]
+
+            total_dod = final_df["DOD"].sum()
+            
+            st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+            m_col1, m_col2, m_col3 = st.columns(3)
+            with m_col1: st.metric(label="Active Session Slots", value=f"{len(final_df)} Modules")
+            with m_col2: st.metric(label="Cumulative Session DOD", value=f"{total_dod} / {max_dod_threshold} Target")
+            with m_col3:
+                compliance_status = "Within Ceiling" if total_dod <= max_dod_threshold else "Exceeds Ceiling"
+                st.metric(label="DOD Compliance Status", value=compliance_status)
+
+            st.markdown("#### ✈️ Sequenced Simulator Session & EBT Competency Rubric")
+            
+            instructor_grades = {}
+            instructor_notes = {}
+            slot_competencies = {}
+            
+            for idx, row in final_df.iterrows():
+                slot_num = int(row['SLOT'])
+                event_title = row['EVENT']
+                dod = int(row['DOD'])
+                phase_num = int(row['PHASES'])
+                role = row.get('ROLE', 'PF Focus')
+                
+                sequence_data = PROGRAM_SYLLABUS_EXERCISES.get("EX-01_EFATO", {})["sequence"]
+                for ex_key, ex_val in PROGRAM_SYLLABUS_EXERCISES.items():
+                    if any(kw in str(event_title).upper() for kw in ex_val["keywords"]):
+                        sequence_data = ex_val["sequence"]
+                        break
+
+                with st.expander(f"Slot #{slot_num:02d} — {row['PHASE_NAME']} | DOD {dod} | {event_title} ({role})", expanded=False):
+                    st.markdown("""
+                    <div style='background-color: var(--secondary-background-color); padding: 18px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);'>
+                        <h5 style='color: #0284C7; margin-top: 0; margin-bottom: 16px;'>⏱️ Chronological Execution Sequence & OB Markers</h5>
+                    """, unsafe_allow_html=True)
+                    
+                    for step in sequence_data:
+                        st.markdown(f"<b style='color: var(--text-color); font-size: 15px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='margin-left: 14px; border-left: 3px solid #0284C7; padding-left: 14px; margin-bottom: 18px; margin-top: 6px;'>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='color: var(--text-color); font-size: 13.5px; margin-bottom: 10px; opacity: 0.85;'><b>Target Action (PTA):</b> {step['pta']}</div>", unsafe_allow_html=True)
+                        for ob in step['obs']:
+                            st.markdown(f"<div style='color: #10B981; font-size: 13.5px; font-weight: 600; margin-bottom: 4px;'>✓ {ob['text']} <span class='ref-badge' title='{DOCUMENT_REFERENCES.get(ob['ref'], ob['ref'])}'>{ob['ref']}</span></div>", unsafe_allow_html=True)
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:11.5px; opacity:0.7; margin-bottom:4px;'>Competencies exercised by this scenario:</div>{competency_chip_row(row.get('COMPETENCIES', []))}", unsafe_allow_html=True)
+                    demonstrated = st.multiselect(
+                        f"✅ Competencies Actually Demonstrated (Slot #{slot_num:02d})",
+                        options=list(COMPETENCY_KEYS.keys()),
+                        default=list(row.get("COMPETENCIES", [])),
+                        format_func=lambda x: f"{x} – {COMPETENCY_KEYS[x]}",
+                        key=f"comp_demo_{slot_num}"
+                    )
+                    slot_competencies[slot_num] = demonstrated
+
+                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                    g_col1, g_col2 = st.columns([1, 2])
+                    with g_col1:
+                        instructor_grades[slot_num] = st.selectbox(
+                            f"KM Malta Grade (Slot #{slot_num:02d})",
+                            options=[5, 4, 3, 2, 1],
+                            index=2,
+                            format_func=lambda x: {
+                                5: "Grade 5 (Excellent)",
+                                4: "Grade 4 (Very Good)",
+                                3: "Grade 3 (Good / Standard)",
+                                2: "Grade 2 (Min Acceptable - Review)",
+                                1: "Grade 1 (Unsatisfactory)"
+                            }[x],
+                            key=f"grade_slot_{slot_num}"
+                        )
+                    with g_col2:
+                        grade_now = instructor_grades[slot_num]
+                        phrase_choice = st.selectbox(
+                            f"Standardized Comment (Slot #{slot_num:02d})",
+                            options=get_standard_phrase_options(grade_now),
+                            key=f"phrase_slot_{slot_num}"
+                        )
+                        if phrase_choice == "Custom (type below)":
+                            instructor_notes[slot_num] = st.text_input(f"Custom Note (Slot #{slot_num:02d})", value="", key=f"note_slot_{slot_num}")
+                        else:
+                            extra_detail = st.text_input(f"Optional detail (Slot #{slot_num:02d})", value="", key=f"note_extra_{slot_num}")
+                            instructor_notes[slot_num] = f"{phrase_choice} {extra_detail.strip()}" if extra_detail.strip() else phrase_choice
+
+            st.session_state.slot_competencies = slot_competencies
+            st.markdown("---")
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                csv_export = final_df.to_csv(index=False)
+                st.download_button(label="📥 Download Session Schedule (CSV)", data=csv_export, file_name=f"sim_session_DOD_{max_dod_threshold}.csv", mime="text/csv", use_container_width=True, key="download_csv_button")
+            with col_exp2:
+                pdf_data = generate_pdf_briefing(final_df, instructor_grades, instructor_notes, slot_competencies, total_dod, max_dod_threshold, session_mode, capt_name, fo_name, sim_id, ios_summary_str)
+                st.download_button(label="📄 Download Completed KM Malta EBT PDF Record", data=pdf_data, file_name=f"km_malta_ebt_record_{max_dod_threshold}.pdf", mime="application/pdf", use_container_width=True, key="download_pdf_button")
 
 # ==========================================
 # ROBUST SIDEBAR: SLOTS CONFIGURATION & REFERENCES FOOTER
@@ -796,457 +1143,10 @@ st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
 uploaded_scen = st.sidebar.file_uploader("Upload Scenarios.csv", type=["csv"])
 uploaded_comp = st.sidebar.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags.")
 
-# Document References Footer in the Left Column (Sidebar)
+# Document References Footer in Sidebar
 st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
 st.sidebar.markdown("<div class='sidebar-header'>📚 DOCUMENT REFERENCES</div>", unsafe_allow_html=True)
 for tag, title in DOCUMENT_REFERENCES.items():
     st.sidebar.markdown(f"<div style='font-size: 11px; color: var(--text-color); opacity: 0.75; margin-bottom: 2px;'><b>[{tag}]</b> {title}</div>", unsafe_allow_html=True)
 
-st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v4.2 2026</div>", unsafe_allow_html=True)
-
-# ==========================================
-# DATA LOADING & PDF GENERATION (OPTIMIZED MATCHING)
-# ==========================================
-def resource_path(relative_path):
-    try: base_path = sys._MEIPASS
-    except Exception: base_path = os.path.dirname(os.path.abspath(__file__))
-    local_path = os.path.join(base_path, relative_path)
-    if os.path.exists(local_path): return local_path
-    parent_path = os.path.join(os.path.dirname(base_path), relative_path)
-    return parent_path if os.path.exists(parent_path) else local_path
-
-scenarios_source = uploaded_scen if uploaded_scen is not None else resource_path("Scenarios.csv")
-competency_source = uploaded_comp if uploaded_comp is not None else (resource_path("Keypams.xlsx") if os.path.exists(resource_path("Keypams.xlsx")) else None)
-
-@st.cache_data(show_spinner="Loading and caching matrix scenarios...")
-def load_scenario_database(s_source, c_source):
-    try:
-        df_raw = pd.read_csv(s_source, encoding="cp1252") if os.path.exists(str(s_source)) or hasattr(s_source, 'read') else pd.read_csv(s_source, encoding="utf-8")
-        df_raw.columns = [str(c).strip() for c in df_raw.columns]
-        while len(df_raw.columns) < 10: df_raw[f"Col_{len(df_raw.columns)}"] = None
-
-        records = []
-        for idx, row in df_raw.iterrows():
-            event, dod, ata = row.iloc[0], row.iloc[1], row.get('ATA', None)
-            if pd.isna(event) or pd.isna(dod) or len(str(event).strip()) <= 2: continue
-            for p_idx, col_idx in enumerate(range(2, 10)):
-                if col_idx < len(row):
-                    val = row.iloc[col_idx]
-                    if pd.notna(val) and str(val).strip() != "":
-                        records.append({"EVENT": str(event).strip(), "DOD": int(float(dod)), "PHASES": p_idx + 1, "ATA": int(float(ata)) if pd.notna(ata) else None, "DURATION": 15})
-        df = pd.DataFrame(records)
-        df["scenario_id"] = [f"SC-{i+1:02d}" for i in range(len(df))]
-
-        match_stats = {"keypams_loaded": False, "matched_events": 0, "total_events": df["EVENT"].nunique() if not df.empty else 0}
-
-        comp_lookup = {}
-        if c_source is not None:
-            try:
-                df_comp = pd.read_excel(c_source)
-                df_comp.columns = [str(c).strip() for c in df_comp.columns]
-                if "SA" in df_comp.columns and "SAW" not in df_comp.columns:
-                    df_comp = df_comp.rename(columns={"SA": "SAW"})
-                comp_cols = [c for c in COMPETENCY_KEYS.keys() if c in df_comp.columns]
-                if comp_cols and "Event" in df_comp.columns:
-                    for _, crow in df_comp.iterrows():
-                        k_event = str(crow["Event"])
-                        norm_k = _normalize_event_name(k_event)
-                        active_comps = [c for c in comp_cols if pd.notna(crow[c]) and float(crow[c]) >= 1]
-                        comp_lookup[norm_k] = active_comps
-                    match_stats["keypams_loaded"] = True
-            except Exception:
-                pass
-
-        norm_keys = list(comp_lookup.keys())
-        matched_events = set()
-
-        def resolve_competencies(ev, phase):
-            codes = set(get_scenario_competencies(ev, phase))
-            if comp_lookup:
-                norm_ev = _normalize_event_name(ev)
-                hit = comp_lookup.get(norm_ev)
-                if hit is None:
-                    tokens_ev = set(norm_ev.split())
-                    for k in norm_keys:
-                        tokens_k = set(k.split())
-                        if len(tokens_ev & tokens_k) >= 2 and len(tokens_ev & tokens_k) / max(len(tokens_ev), len(tokens_k)) > 0.45:
-                            hit = comp_lookup[k]
-                            break
-                if hit is None:
-                    close = difflib.get_close_matches(norm_ev, norm_keys, n=1, cutoff=0.5)
-                    if close:
-                        hit = comp_lookup[close[0]]
-                if hit:
-                    matched_events.add(ev)
-                    codes.update(hit)
-            return sorted(codes)
-
-        df["COMPETENCIES"] = df.apply(lambda r: resolve_competencies(r["EVENT"], r["PHASES"]), axis=1)
-        match_stats["matched_events"] = len(matched_events)
-        return df, match_stats
-    except Exception as e:
-        return None, str(e)
-
-def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_dod, max_dod, mode, capt, fo, sim_id_val, ios_info):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
-    styles = getSampleStyleSheet()
-    
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontSize=11, leading=13, textColor=colors.HexColor('#0284C7'))
-    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=colors.HexColor('#555555'))
-    cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=6.5, leading=8.5)
-    cell_bold = ParagraphStyle('CellB', parent=styles['Normal'], fontSize=6.5, leading=8.5, fontName='Helvetica-Bold')
-
-    elements = [
-        Paragraph(f"KM MALTA AIRLINES — SIMULATOR PERFORMANCE & EBT GRADING RECORD ({mode.upper()})", title_style),
-        Paragraph(f"<b>Crew:</b> {capt} & {fo} &nbsp;|&nbsp; <b>Device:</b> {sim_id_val} &nbsp;|&nbsp; <b>Total DOD:</b> {total_dod}/{max_dod}", subtitle_style),
-        Paragraph(f"<b>IOS Setup Config:</b> <i>{ios_info}</i>", subtitle_style),
-        Spacer(1, 4),
-        HRFlowable(width="100%", thickness=1, color=colors.HexColor('#0284C7'), spaceAfter=4)
-    ]
-
-    table_data = [[
-        Paragraph("<b>Slot</b>", cell_bold), Paragraph("<b>Phase / Event</b>", cell_bold),
-        Paragraph("<b>Role / DOD</b>", cell_bold), Paragraph("<b>Target Actions & Observable Behaviors (OBs)</b>", cell_bold),
-        Paragraph("<b>Grade (1-5) & Notes</b>", cell_bold)
-    ]]
-
-    for _, row in df_session.iterrows():
-        slot_id = int(row["SLOT"])
-        sequence_data = get_detailed_scenario_ob_breakdown(row['EVENT'], row['PHASES'])
-        
-        combined_details = ""
-        for step in sequence_data:
-            combined_details += f"<b>{step['phase']}</b><br/><i>Action:</i> {step['pta']}<br/>"
-            for ob in step['obs']:
-                combined_details += f"<font color='#006600'>✓ {ob['text']}</font> <i>[{ob['ref']}]</i><br/>"
-            combined_details += "<br/>"
-
-        phase_event_str = f"<b>{row['PHASE_NAME']}</b><br/>{row['EVENT']}"
-        role_dod_str = f"{row.get('ROLE','PF')}<br/>DOD {row['DOD']}"
-        
-        grade_val = grades_dict.get(slot_id, 3)
-        note_val = notes_dict.get(slot_id, "Standard performance.")
-        comps_val = comp_dict.get(slot_id, [])
-        comps_str = ", ".join(comps_val) if comps_val else "—"
-        grade_str = f"<b>Grade: {grade_val}/5</b><br/><i>{GRADE_DESCRIPTORS.get(grade_val, '')}</i><br/><b>Competencies:</b> {comps_str}<br/><b>Notes:</b> {note_val}"
-
-        table_data.append([
-            Paragraph(str(slot_id), cell_style),
-            Paragraph(phase_event_str, cell_style),
-            Paragraph(role_dod_str, cell_style),
-            Paragraph(combined_details, cell_style),
-            Paragraph(grade_str, cell_style)
-        ])
-
-    t = Table(table_data, colWidths=[24, 105, 52, 195, 162])
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F0F4F8')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#0284C7')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3), ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-    ]))
-    elements.extend([t])
-
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
-
-if uploaded_scen is None and not os.path.exists(resource_path("Scenarios.csv")):
-    st.warning("⚠️ `Scenarios.csv` not found. Please upload your scenarios file using the sidebar uploader.")
-else:
-    df, match_stats = load_scenario_database(scenarios_source, competency_source)
-    if df is not None:
-        df["TEM_THREAT"], df["TEM_ERROR"] = zip(*df.apply(lambda r: derive_tem_tags(r["EVENT"], r["PHASES"], 0, 0, rcam_code, vis_rvr_str), axis=1))
-        if match_stats.get("keypams_loaded"):
-            pct = (match_stats["matched_events"] / match_stats["total_events"] * 100) if match_stats["total_events"] else 0
-            st.success(f"✓ {len(df)} scenario/phase rows loaded | Keypams.xlsx cross-matched {match_stats['matched_events']}/{match_stats['total_events']} events ({pct:.0f}%).")
-        else:
-            st.success(f"✓ {len(df)} scenario/phase rows loaded | Competencies auto-derived from each scenario's OB sequence.")
-
-        if st.button("⚡ Generate Simulator Profile", type="primary"):
-            selected_events = []
-            used_titles = set()
-            for cfg in slot_configurations:
-                if cfg.get("mandatory") and cfg["phase"] == 2:
-                    forced_match = df[(df["PHASES"] == 2) & (df["DOD"] == cfg["dod"])]
-                    if not forced_match.empty:
-                        picked = forced_match.iloc[0].to_dict()
-                    else:
-                        picked = {"EVENT": "Engine Failure After V1 (SIM-EFATO-01)", "DOD": cfg["dod"], "PHASES": 2, "scenario_id": "SC-FORCED", "COMPETENCIES": get_scenario_competencies("Engine Failure After V1 (SIM-EFATO-01)", 2)}
-                    picked["SLOT"] = cfg["slot"]
-                    picked["ROLE"] = cfg["role"]
-                    picked["PHASE_NAME"] = PHASE_NAMES[cfg["phase"]]
-                    selected_events.append(picked)
-                    used_titles.add(picked["EVENT"])
-                    continue
-
-                cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
-                cands = apply_category_filter(cands, cfg)
-                cands = apply_competency_filter(cands, cfg.get("competency", "Any"))
-                if cands.empty and allow_fallback:
-                    cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
-                if not cands.empty:
-                    picked = cands.sample(n=1).iloc[0].to_dict()
-                    picked["SLOT"] = cfg["slot"]
-                    picked["ROLE"] = cfg["role"]
-                    picked["PHASE_NAME"] = PHASE_NAMES[cfg["phase"]]
-                    selected_events.append(picked)
-                    used_titles.add(picked["EVENT"])
-            st.session_state.final_df = pd.DataFrame(selected_events).sort_values("SLOT").reset_index(drop=True)
-            st.session_state.slot_overrides = {}
-            st.session_state.slot_competencies = {}
-            st.success("Session Profile Generated!")
-
-        if "final_df" in st.session_state:
-            if "slot_overrides" not in st.session_state:
-                st.session_state.slot_overrides = {}
-
-            final_df = st.session_state.final_df
-            
-            for idx, row in final_df.iterrows():
-                s_id = int(row["SLOT"])
-                if s_id in st.session_state.slot_overrides:
-                    ov_data = st.session_state.slot_overrides[s_id]
-                    final_df.loc[idx, "EVENT"] = ov_data["EVENT"]
-                    final_df.loc[idx, "DOD"] = ov_data["DOD"]
-                    src_match = df[(df["EVENT"] == ov_data["EVENT"]) & (df["DOD"] == ov_data["DOD"])]
-                    if not src_match.empty:
-                        final_df.at[idx, "COMPETENCIES"] = src_match.iloc[0]["COMPETENCIES"]
-
-            total_dod = final_df["DOD"].sum()
-            
-            st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
-            m_col1, m_col2, m_col3 = st.columns(3)
-            with m_col1:
-                st.metric(label="Active Session Slots", value=f"{len(final_df)} Modules")
-            with m_col2:
-                st.metric(label="Cumulative Session DOD", value=f"{total_dod} / {max_dod_threshold} Target")
-            with m_col3:
-                compliance_status = "Within Ceiling" if total_dod <= max_dod_threshold else "Exceeds Ceiling"
-                st.metric(label="DOD Compliance Status", value=compliance_status)
-
-            st.markdown("#### ✈️ Sequenced Simulator Session & EBT Competency Rubric")
-            
-            instructor_grades = {}
-            instructor_notes = {}
-            slot_competencies = {}
-            
-            for idx, row in final_df.iterrows():
-                slot_num = int(row['SLOT'])
-                event_title = row['EVENT']
-                dod = int(row['DOD'])
-                phase_num = int(row['PHASES'])
-                role = row.get('ROLE', 'PF Focus')
-                
-                sequence_data = get_detailed_scenario_ob_breakdown(event_title, phase_num)
-                
-                with st.expander(f"Slot #{slot_num:02d} — {row['PHASE_NAME']} | DOD {dod} | {event_title} ({role})", expanded=False):
-                    eligible_cands = df[(df["PHASES"] == phase_num) & (df["DOD"] == dod)]
-                    if eligible_cands.empty:
-                        eligible_cands = df[df["PHASES"] == phase_num] 
-                    
-                    cand_options = []
-                    event_map = {}
-                    for _, cand_row in eligible_cands.iterrows():
-                        ev_name = cand_row["EVENT"]
-                        ev_dod = int(cand_row["DOD"])
-                        label = f"{ev_name}"
-                        cand_options.append(label)
-                        event_map[label] = {"EVENT": ev_name, "DOD": ev_dod}
-                    
-                    cand_options = sorted(list(set(cand_options)))
-                    
-                    default_label = event_title
-                    if default_label not in cand_options:
-                        cand_options.insert(0, default_label)
-                        event_map[default_label] = {"EVENT": event_title, "DOD": dod}
-                    
-                    default_index = cand_options.index(default_label) if default_label in cand_options else 0
-                    
-                    chosen_label = st.selectbox(
-                        f"🔄 Swap Scenario (Phase {phase_num}, DOD {dod})",
-                        options=cand_options,
-                        index=default_index,
-                        key=f"override_slot_{slot_num}"
-                    )
-                    
-                    selected_ev_data = event_map[chosen_label]
-                    if selected_ev_data["EVENT"] != event_title or selected_ev_data["DOD"] != dod:
-                        st.session_state.slot_overrides[slot_num] = selected_ev_data
-                        st.rerun()
-
-                    st.markdown("""
-                    <div style='background-color: var(--secondary-background-color); padding: 18px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);'>
-                        <h5 style='color: #0284C7; margin-top: 0; margin-bottom: 16px;'>⏱️ Chronological Execution Sequence & OB Markers</h5>
-                    """, unsafe_allow_html=True)
-                    
-                    for step in sequence_data:
-                        st.markdown(f"<b style='color: var(--text-color); font-size: 15px;'>{step['phase']}</b>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='margin-left: 14px; border-left: 3px solid #0284C7; padding-left: 14px; margin-bottom: 18px; margin-top: 6px;'>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='color: var(--text-color); font-size: 13.5px; margin-bottom: 10px; opacity: 0.85;'><b>Target Action (PTA):</b> {step['pta']}</div>", unsafe_allow_html=True)
-                        for ob in step['obs']:
-                            st.markdown(f"<div style='color: #10B981; font-size: 13.5px; font-weight: 600; margin-bottom: 4px;'>✓ {ob['text']} <span class='ref-badge' title='{DOCUMENT_REFERENCES.get(ob['ref'], ob['ref'])}'>{ob['ref']}</span></div>", unsafe_allow_html=True)
-                        st.markdown("</div>", unsafe_allow_html=True)
-                    st.markdown("</div>", unsafe_allow_html=True)
-
-                    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='font-size:11.5px; opacity:0.7; margin-bottom:4px;'>Competencies exercised by this scenario:</div>{competency_chip_row(row.get('COMPETENCIES', []))}", unsafe_allow_html=True)
-                    demonstrated = st.multiselect(
-                        f"✅ Competencies Actually Demonstrated (Slot #{slot_num:02d})",
-                        options=list(COMPETENCY_KEYS.keys()),
-                        default=list(row.get("COMPETENCIES", [])),
-                        format_func=lambda x: f"{x} – {COMPETENCY_KEYS[x]}",
-                        key=f"comp_demo_{slot_num}",
-                        help="Defaults to the competencies this scenario's own OB sequence targets."
-                    )
-                    slot_competencies[slot_num] = demonstrated
-
-                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                    g_col1, g_col2 = st.columns([1, 2])
-                    with g_col1:
-                        instructor_grades[slot_num] = st.selectbox(
-                            f"KM Malta Grade (Slot #{slot_num:02d})",
-                            options=[5, 4, 3, 2, 1],
-                            index=2,
-                            format_func=lambda x: {
-                                5: "Grade 5 (Excellent)",
-                                4: "Grade 4 (Very Good)",
-                                3: "Grade 3 (Good / Standard)",
-                                2: "Grade 2 (Min Acceptable - Review)",
-                                1: "Grade 1 (Unsatisfactory)"
-                            }[x],
-                            key=f"grade_slot_{slot_num}"
-                        )
-                        st.markdown(f"<div style='font-size:11.5px; opacity:0.75; font-style:italic; margin-top:-6px;'>{GRADE_DESCRIPTORS[instructor_grades[slot_num]]}</div>", unsafe_allow_html=True)
-                    with g_col2:
-                        grade_now = instructor_grades[slot_num]
-                        phrase_choice = st.selectbox(
-                            f"Standardized Comment (Slot #{slot_num:02d})",
-                            options=get_standard_phrase_options(grade_now),
-                            key=f"phrase_slot_{slot_num}",
-                            help="Picking from the standard phrase bank."
-                        )
-                        if phrase_choice == "Custom (type below)":
-                            custom_text = st.text_input(
-                                f"Custom Note (Slot #{slot_num:02d})",
-                                value="",
-                                key=f"note_slot_{slot_num}",
-                                placeholder="Describe the scenario-specific detail."
-                            )
-                            instructor_notes[slot_num] = custom_text
-                        else:
-                            instructor_notes[slot_num] = phrase_choice
-                            extra_detail = st.text_input(
-                                f"Optional scenario-specific detail (Slot #{slot_num:02d})",
-                                value="",
-                                key=f"note_extra_{slot_num}",
-                                placeholder="Anything specific to this run."
-                            )
-                            if extra_detail.strip():
-                                instructor_notes[slot_num] = f"{phrase_choice} {extra_detail.strip()}"
-
-            st.session_state.slot_competencies = slot_competencies
-            st.markdown("---")
-            col_exp1, col_exp2 = st.columns(2)
-            with col_exp1:
-                csv_export = final_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Session Schedule (CSV)",
-                    data=csv_export,
-                    file_name=f"sim_session_DOD_{max_dod_threshold}.csv",
-                    mime="text/csv",
-                    use_container_width=True,
-                    key="download_csv_button"
-                )
-            with col_exp2:
-                pdf_data = generate_pdf_briefing(final_df, instructor_grades, instructor_notes, slot_competencies, total_dod, max_dod_threshold, session_mode, capt_name, fo_name, sim_id, ios_summary_str)
-                st.download_button(
-                    label="📄 Download Completed KM Malta EBT PDF Record",
-                    data=pdf_data,
-                    file_name=f"km_malta_ebt_record_{max_dod_threshold}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                    key="download_pdf_button"
-                )
-
-            with tab_debrief:
-                st.markdown("#### 📊 Session Debrief — Competency Coverage & Standardized Summary")
-
-                comp_grades = {c: [] for c in COMPETENCY_KEYS}
-                for _, row in final_df.iterrows():
-                    slot_num = int(row["SLOT"])
-                    g = instructor_grades.get(slot_num)
-                    for c in slot_competencies.get(slot_num, []):
-                        if g is not None:
-                            comp_grades[c].append(g)
-
-                cov_col1, cov_col2 = st.columns([1.3, 1])
-                with cov_col1:
-                    st.markdown("<b>Average Grade by Competency</b>", unsafe_allow_html=True)
-                    chart_df = pd.DataFrame({
-                        "Competency": list(COMPETENCY_KEYS.keys()),
-                        "Avg Grade": [sum(v) / len(v) if v else 0 for v in comp_grades.values()],
-                        "Times Demonstrated": [len(v) for v in comp_grades.values()],
-                    }).set_index("Competency")
-                    st.bar_chart(chart_df["Avg Grade"])
-                with cov_col2:
-                    st.markdown("<b>Coverage Count</b>", unsafe_allow_html=True)
-                    st.dataframe(chart_df, use_container_width=True)
-
-                uncovered = [c for c, v in comp_grades.items() if not v]
-                if uncovered:
-                    st.markdown(
-                        f"<div class='status-badge-warn'>⚠️ Not sampled this session: {', '.join(uncovered)}</div>"
-                        f"<div style='font-size:11.5px; opacity:0.75; margin-top:4px;'>ICAO Doc 9995 recommends EBT sessions build broad competency coverage over a training cycle.</div>",
-                        unsafe_allow_html=True
-                    )
-                else:
-                    st.markdown("<div class='status-badge-ok'>✓ All 9 core competencies sampled this session</div>", unsafe_allow_html=True)
-
-                low_grade_slots = [int(r["SLOT"]) for _, r in final_df.iterrows() if instructor_grades.get(int(r["SLOT"]), 3) <= 2]
-                st.markdown("---")
-                st.markdown("<b>Standardized Debrief Script</b>", unsafe_allow_html=True)
-                st.markdown("<div style='font-size:11.5px; opacity:0.7; margin-bottom:6px;'>Auto-assembled from grade descriptors and standardized comments.</div>", unsafe_allow_html=True)
-                script_lines = [f"Session Debrief — {capt_name} & {fo_name} — {sim_id} — Total DOD {total_dod}/{max_dod_threshold}\n"]
-                for _, row in final_df.iterrows():
-                    slot_num = int(row["SLOT"])
-                    g = instructor_grades.get(slot_num, 3)
-                    script_lines.append(
-                        f"Slot {slot_num:02d} ({row['EVENT']}, {row['PHASE_NAME']}): Grade {g}/5. {instructor_notes.get(slot_num, '')}"
-                    )
-                if low_grade_slots:
-                    script_lines.append(f"\nFollow-up required on slot(s): {', '.join(str(s) for s in low_grade_slots)} — graded 2 or below.")
-                st.text_area("Debrief script", value="\n".join(script_lines), height=220, key="debrief_script_area")
-
-        else:
-            with tab_debrief:
-                st.info("Generate a Simulator Profile in the **Session Setup** area above to populate the debrief summary here.")
-
-        with tab_selector:
-            st.markdown("---")
-            st.markdown("#### 📚 Full Scenario Matrix")
-            f_col1, f_col2, f_col3 = st.columns(3)
-            with f_col1:
-                f_phase = st.selectbox("Filter by Phase", options=["Any"] + ALL_PHASE_KEYS, format_func=lambda x: x if x == "Any" else PHASE_NAMES[x], key="sel_filter_phase")
-            with f_col2:
-                f_dod = st.selectbox("Filter by DOD", options=["Any", 1, 2, 3], key="sel_filter_dod")
-            with f_col3:
-                f_comp = st.selectbox("Filter by Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key="sel_filter_comp")
-
-            view_df = df.copy()
-            if f_phase != "Any":
-                view_df = view_df[view_df["PHASES"] == f_phase]
-            if f_dod != "Any":
-                view_df = view_df[view_df["DOD"] == f_dod]
-            if f_comp != "Any":
-                view_df = view_df[view_df["COMPETENCIES"].apply(lambda c: f_comp in c)]
-
-            st.caption(f"{len(view_df)} of {len(df)} scenario/phase rows match the current filters.")
-            display_df = view_df[["EVENT", "PHASES", "DOD", "ATA", "COMPETENCIES"]].copy()
-            display_df["PHASES"] = display_df["PHASES"].map(PHASE_NAMES)
-            display_df["COMPETENCIES"] = display_df["COMPETENCIES"].apply(lambda c: ", ".join(c) if c else "—")
-            st.dataframe(display_df, use_container_width=True, hide_index=True, height=420)
-    else:
-        st.error(f"⚠️ Could not load the scenario database: {match_stats}")
+st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v4.6 2026</div>", unsafe_allow_html=True)
