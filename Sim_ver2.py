@@ -463,11 +463,6 @@ EUROPEAN_AIRPORTS = {
     "EHAM (Amsterdam Schiphol)": {"icao": "EHAM", "elev": -11, "rwy": ["06/24", "09/27", "18C/36C", "18L/36R", "18R/36L"], "ils": "108.50 (24)"}
 }
 
-# The 9 ICAO Doc 9995 / EASA CBTA core competencies. Used to (a) tag which
-# competencies a scenario actually targets (auto-derived from its OB
-# markers, optionally cross-checked against an uploaded Keypams.xlsx),
-# and (b) structure grading + the SQL/JSON exports around competencies
-# rather than a single unstructured 1-5 number.
 COMPETENCY_KEYS = {
     "APK": "Application of Procedures",
     "COM": "Communication",
@@ -480,12 +475,6 @@ COMPETENCY_KEYS = {
     "WLM": "Workload Management",
 }
 
-# Standardized behavioural anchors for each grade. Showing the anchor text
-# next to the grade selector — rather than leaving "3" to mean whatever
-# each instructor privately thinks "average" means — is one of the
-# simplest, highest-leverage things a CBTA tool can do for inter-rater
-# reliability: every instructor grading against the same published
-# criteria, every time, in every session.
 GRADE_DESCRIPTORS = {
     5: "Highly effective performance. No errors observed; deviations, if any, were trivial and self-detected before any effect on the flight path or safety margins.",
     4: "Effective performance. Minor errors occurred but were self-identified and self-corrected without any need for intervention or coaching.",
@@ -494,18 +483,6 @@ GRADE_DESCRIPTORS = {
     1: "Ineffective / unsafe performance. Immediate intervention was required to maintain safety margins; represents an unacceptable standard of performance.",
 }
 
-# ==========================================
-# STANDARDIZED PHRASEOLOGY BANK
-# The single biggest threat to inter-rater reliability isn't the numeric
-# grade — instructors converge reasonably well on 1-5 once anchored to
-# GRADE_DESCRIPTORS above. It's the free-text qualitative note: two
-# instructors watching the same performance write two completely
-# different comments, in different language, at different levels of
-# detail, and those comments are what actually gets remembered and acted
-# on. This bank gives every instructor the same standardized phrases to
-# select from per grade band, with a free-text field reserved for
-# scenario-specific detail only — not for re-describing the standard.
-# ==========================================
 STANDARD_PHRASE_BANK = {
     5: [
         "No errors observed; execution exceeded the published standard throughout.",
@@ -559,31 +536,17 @@ def derive_tem_tags(event_title, phase_num, w_spd, w_gust, rcam, vis):
 
 def get_detailed_scenario_ob_breakdown(event_title, phase_num):
     title_u = str(event_title).upper()
-    
-    # Iterate through the matrix to find a matching scenario keyword
     for key, data in SCENARIO_OB_MATRIX.items():
         if key == "GENERIC_MALFUNCTION": continue
         if any(kw in title_u for kw in data["keywords"]) or (key == "DISPATCH_MEL" and phase_num == 1) or (key == "APPROACH_LANDING" and phase_num in [6,7]):
             return data["sequence"]
-            
-    # Fallback to generic if no keywords match
     return SCENARIO_OB_MATRIX["GENERIC_MALFUNCTION"]["sequence"]
 
-
 def extract_ob_competency(ob_text):
-    """Every OB marker in SCENARIO_OB_MATRIX is written as 'OB <CODE> <n.n>: ...'
-    (e.g. 'OB FPM 3.1: ...'). Pull the 3-letter competency code straight out
-    of that text instead of maintaining a second, separate mapping that
-    could drift out of sync with the OB library."""
     m = re.match(r"OB\s+([A-Z]{2,3})\s", str(ob_text))
     return m.group(1) if m and m.group(1) in COMPETENCY_KEYS else None
 
-
 def get_scenario_competencies(event_title, phase_num):
-    """The competencies a scenario actually exercises, derived directly from
-    its own OB sequence — this is more precise than a flat per-event flag
-    file because it comes from the exact observable behaviours the
-    instructor is grading against."""
     codes = set()
     for step in get_detailed_scenario_ob_breakdown(event_title, phase_num):
         for ob in step["obs"]:
@@ -592,16 +555,7 @@ def get_scenario_competencies(event_title, phase_num):
                 codes.add(code)
     return sorted(codes)
 
-
 def apply_category_filter(cands, cfg):
-    """Apply the sidebar's Category / ATA Chapter selection to a candidate
-    scenario pool. Previously these sidebar controls were collected into
-    slot_configurations but never actually used to narrow the selection —
-    every slot silently ignored 'Technical Failure' / 'Non-Technical / CRM'
-    / 'ATA Specific' and the chosen ATA chapter. This wires them up using
-    the ATA column already present in Scenarios.csv: rows with an ATA
-    chapter are treated as technical failures, rows without one as
-    non-technical/CRM items."""
     cat = cfg.get("type", "Any")
     if cat == "Technical Failure":
         return cands[cands["ATA"].notna()]
@@ -611,45 +565,20 @@ def apply_category_filter(cands, cfg):
         return cands[cands["ATA"] == cfg["ata"]]
     return cands
 
-
 def apply_competency_filter(cands, target_competency):
-    """Narrow candidates to scenarios that actually exercise a chosen
-    competency — lets an instructor deliberately build a session that
-    stresses, say, Workload Management or Communication."""
     if target_competency == "Any":
         return cands
     mask = cands.apply(lambda r: target_competency in get_scenario_competencies(r["EVENT"], r["PHASES"]), axis=1)
     return cands[mask]
 
-
 def _normalize_event_name(name):
-    """Loosely normalize an event title so the same failure can be matched
-    across Scenarios.csv and an uploaded Keypams.xlsx even when
-    punctuation, dashes or 'Ref:' suffixes differ between the two files."""
     s = str(name).upper()
-    for ch in ["(", ")", "–", "—", "-", ":", ",", "/", ".", "REF"]:
-        s = s.replace(ch, " ")
+    s = re.sub(r'\(REF:[^)]+\)', '', s)
+    for ch in ['(', ')', '–', '—', '-', ':', ',', '/', '.', '\xa0', '_', '+']:
+        s = s.replace(ch, ' ')
     return " ".join(s.split())
 
-
-# ==========================================
-# REUSABLE UI HELPERS
-# (kept in one place so the same panel/badge/chip markup isn't
-#  hand-rolled with inline HTML a dozen times throughout the file)
-# ==========================================
-def info_panel(title, body_html, accent="#0284C7"):
-    st.markdown(f"""
-    <div style="background:var(--secondary-background-color); padding:12px 14px; border-radius:6px; border:1px solid rgba(128,128,128,0.2);">
-        <b style="color:{accent};">{title}</b>
-        <div style="margin-top:6px;">{body_html}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
 def competency_chip_row(codes):
-    """Small inline chips naming competency codes — used wherever a
-    scenario's or slot's matched/demonstrated competencies need to be
-    shown at a glance."""
     if not codes:
         return "<span style='opacity:0.6; font-size:12px;'>No competency data matched</span>"
     return "".join(
@@ -658,15 +587,11 @@ def competency_chip_row(codes):
         for c in codes
     )
 
-
 def get_standard_phrase_options(grade):
-    """Standardized phraseology bank entries for the given grade, plus a
-    'Custom' escape hatch for the rare case none of them fit."""
     return STANDARD_PHRASE_BANK.get(grade, []) + ["Custom (type below)"]
 
-
 # ==========================================
-# STREAMLINED TABS (Environment + OPC/ORCA combined, Fully Functional Tab 1)
+# NAVIGATION TABS
 # ==========================================
 tab_session, tab_env, tab_orca, tab_selector, tab_debrief = st.tabs([
     "⚙️ Session Setup", 
@@ -819,8 +744,6 @@ with tab_orca:
 with tab_selector:
     st.markdown("#### 🎯 Interactive Simulator Scenario Builder & Selector")
     st.markdown("Configure slots via the sidebar, then browse the full scenario matrix here once it loads below — filter it, and see exactly which competencies each scenario targets before you generate a session.")
-    st.info("The live, filterable scenario matrix renders further down this tab once `Scenarios.csv` is loaded (see the bottom of the app / after clicking through the sidebar setup).")
-
 
 # ==========================================
 # ROBUST SIDEBAR: SLOTS CONFIGURATION & REFERENCES FOOTER
@@ -871,7 +794,7 @@ for i in range(len(st.session_state.slot_list)):
 
 st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
 uploaded_scen = st.sidebar.file_uploader("Upload Scenarios.csv", type=["csv"])
-uploaded_comp = st.sidebar.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags. When provided, cross-checked against each scenario's own OB-derived competencies.")
+uploaded_comp = st.sidebar.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags.")
 
 # Document References Footer in the Left Column (Sidebar)
 st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
@@ -882,7 +805,7 @@ for tag, title in DOCUMENT_REFERENCES.items():
 st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v4.2 2026</div>", unsafe_allow_html=True)
 
 # ==========================================
-# DATA LOADING & PDF GENERATION (FULL TAB 1 FUNCTIONALITY RESTORED)
+# DATA LOADING & PDF GENERATION (OPTIMIZED MATCHING)
 # ==========================================
 def resource_path(relative_path):
     try: base_path = sys._MEIPASS
@@ -897,13 +820,6 @@ competency_source = uploaded_comp if uploaded_comp is not None else (resource_pa
 
 @st.cache_data(show_spinner="Loading and caching matrix scenarios...")
 def load_scenario_database(s_source, c_source):
-    """Load Scenarios.csv, tag each row with the competencies its own OB
-    sequence exercises, and — when a Keypams.xlsx is supplied — fuzzy-match
-    each event against it to cross-check those competency flags. The
-    OB-derived tags are the primary source of truth (they're exactly what
-    the instructor grades against); Keypams.xlsx is optional corroboration
-    used only to fill in competencies for events with no OB sequence match
-    of their own."""
     try:
         df_raw = pd.read_csv(s_source, encoding="cp1252") if os.path.exists(str(s_source)) or hasattr(s_source, 'read') else pd.read_csv(s_source, encoding="utf-8")
         df_raw.columns = [str(c).strip() for c in df_raw.columns]
@@ -912,7 +828,7 @@ def load_scenario_database(s_source, c_source):
         records = []
         for idx, row in df_raw.iterrows():
             event, dod, ata = row.iloc[0], row.iloc[1], row.get('ATA', None)
-            if pd.isna(event) or pd.isna(dod): continue
+            if pd.isna(event) or pd.isna(dod) or len(str(event).strip()) <= 2: continue
             for p_idx, col_idx in enumerate(range(2, 10)):
                 if col_idx < len(row):
                     val = row.iloc[col_idx]
@@ -932,10 +848,11 @@ def load_scenario_database(s_source, c_source):
                     df_comp = df_comp.rename(columns={"SA": "SAW"})
                 comp_cols = [c for c in COMPETENCY_KEYS.keys() if c in df_comp.columns]
                 if comp_cols and "Event" in df_comp.columns:
-                    comp_lookup = {
-                        _normalize_event_name(crow["Event"]): [c for c in comp_cols if pd.notna(crow[c]) and float(crow[c]) >= 1]
-                        for _, crow in df_comp.iterrows()
-                    }
+                    for _, crow in df_comp.iterrows():
+                        k_event = str(crow["Event"])
+                        norm_k = _normalize_event_name(k_event)
+                        active_comps = [c for c in comp_cols if pd.notna(crow[c]) and float(crow[c]) >= 1]
+                        comp_lookup[norm_k] = active_comps
                     match_stats["keypams_loaded"] = True
             except Exception:
                 pass
@@ -949,7 +866,14 @@ def load_scenario_database(s_source, c_source):
                 norm_ev = _normalize_event_name(ev)
                 hit = comp_lookup.get(norm_ev)
                 if hit is None:
-                    close = difflib.get_close_matches(norm_ev, norm_keys, n=1, cutoff=0.72)
+                    tokens_ev = set(norm_ev.split())
+                    for k in norm_keys:
+                        tokens_k = set(k.split())
+                        if len(tokens_ev & tokens_k) >= 2 and len(tokens_ev & tokens_k) / max(len(tokens_ev), len(tokens_k)) > 0.45:
+                            hit = comp_lookup[k]
+                            break
+                if hit is None:
+                    close = difflib.get_close_matches(norm_ev, norm_keys, n=1, cutoff=0.5)
                     if close:
                         hit = comp_lookup[close[0]]
                 if hit:
@@ -1062,7 +986,6 @@ else:
                 cands = apply_category_filter(cands, cfg)
                 cands = apply_competency_filter(cands, cfg.get("competency", "Any"))
                 if cands.empty and allow_fallback:
-                    # Smart fallback: drop the category/competency constraint before dropping DOD/phase
                     cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
                 if not cands.empty:
                     picked = cands.sample(n=1).iloc[0].to_dict()
@@ -1088,9 +1011,6 @@ else:
                     ov_data = st.session_state.slot_overrides[s_id]
                     final_df.loc[idx, "EVENT"] = ov_data["EVENT"]
                     final_df.loc[idx, "DOD"] = ov_data["DOD"]
-                    # A swapped-in scenario has its own competency profile — refresh
-                    # it from the master matrix so the slot's competency chips (and
-                    # the SQL/JSON exports) match the event actually selected.
                     src_match = df[(df["EVENT"] == ov_data["EVENT"]) & (df["DOD"] == ov_data["DOD"])]
                     if not src_match.empty:
                         final_df.at[idx, "COMPETENCIES"] = src_match.iloc[0]["COMPETENCIES"]
@@ -1179,7 +1099,7 @@ else:
                         default=list(row.get("COMPETENCIES", [])),
                         format_func=lambda x: f"{x} – {COMPETENCY_KEYS[x]}",
                         key=f"comp_demo_{slot_num}",
-                        help="Defaults to the competencies this scenario's own OB sequence targets. Adjust if the crew's actual performance touched on more, or fewer, competencies than scripted."
+                        help="Defaults to the competencies this scenario's own OB sequence targets."
                     )
                     slot_competencies[slot_num] = demonstrated
 
@@ -1206,14 +1126,14 @@ else:
                             f"Standardized Comment (Slot #{slot_num:02d})",
                             options=get_standard_phrase_options(grade_now),
                             key=f"phrase_slot_{slot_num}",
-                            help="Picking from the standard phrase bank for the selected grade keeps wording consistent between instructors. Use 'Custom' only when none of these fit."
+                            help="Picking from the standard phrase bank."
                         )
                         if phrase_choice == "Custom (type below)":
                             custom_text = st.text_input(
                                 f"Custom Note (Slot #{slot_num:02d})",
                                 value="",
                                 key=f"note_slot_{slot_num}",
-                                placeholder="Describe the scenario-specific detail — avoid re-describing the grade standard itself."
+                                placeholder="Describe the scenario-specific detail."
                             )
                             instructor_notes[slot_num] = custom_text
                         else:
@@ -1222,7 +1142,7 @@ else:
                                 f"Optional scenario-specific detail (Slot #{slot_num:02d})",
                                 value="",
                                 key=f"note_extra_{slot_num}",
-                                placeholder="Anything specific to this run worth adding to the standard phrase above."
+                                placeholder="Anything specific to this run."
                             )
                             if extra_detail.strip():
                                 instructor_notes[slot_num] = f"{phrase_choice} {extra_detail.strip()}"
@@ -1251,11 +1171,6 @@ else:
                     key="download_pdf_button"
                 )
 
-            # ==========================================
-            # SESSION DEBRIEF — aggregated competency coverage & grades,
-            # plus a standardized debrief script assembled from the same
-            # grade descriptors and phrase bank used above.
-            # ==========================================
             with tab_debrief:
                 st.markdown("#### 📊 Session Debrief — Competency Coverage & Standardized Summary")
 
@@ -1284,7 +1199,7 @@ else:
                 if uncovered:
                     st.markdown(
                         f"<div class='status-badge-warn'>⚠️ Not sampled this session: {', '.join(uncovered)}</div>"
-                        f"<div style='font-size:11.5px; opacity:0.75; margin-top:4px;'>ICAO Doc 9995 recommends EBT sessions build broad competency coverage over a training cycle — worth checking these are picked up in a future session.</div>",
+                        f"<div style='font-size:11.5px; opacity:0.75; margin-top:4px;'>ICAO Doc 9995 recommends EBT sessions build broad competency coverage over a training cycle.</div>",
                         unsafe_allow_html=True
                     )
                 else:
@@ -1293,7 +1208,7 @@ else:
                 low_grade_slots = [int(r["SLOT"]) for _, r in final_df.iterrows() if instructor_grades.get(int(r["SLOT"]), 3) <= 2]
                 st.markdown("---")
                 st.markdown("<b>Standardized Debrief Script</b>", unsafe_allow_html=True)
-                st.markdown("<div style='font-size:11.5px; opacity:0.7; margin-bottom:6px;'>Auto-assembled from the grade descriptors and standardized comments selected above — a consistent starting script for the verbal debrief, editable before use.</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size:11.5px; opacity:0.7; margin-bottom:6px;'>Auto-assembled from grade descriptors and standardized comments.</div>", unsafe_allow_html=True)
                 script_lines = [f"Session Debrief — {capt_name} & {fo_name} — {sim_id} — Total DOD {total_dod}/{max_dod_threshold}\n"]
                 for _, row in final_df.iterrows():
                     slot_num = int(row["SLOT"])
@@ -1303,17 +1218,12 @@ else:
                     )
                 if low_grade_slots:
                     script_lines.append(f"\nFollow-up required on slot(s): {', '.join(str(s) for s in low_grade_slots)} — graded 2 or below.")
-                st.text_area("Debrief script (copy/paste or edit before the session debrief)", value="\n".join(script_lines), height=220, key="debrief_script_area")
+                st.text_area("Debrief script", value="\n".join(script_lines), height=220, key="debrief_script_area")
 
         else:
             with tab_debrief:
                 st.info("Generate a Simulator Profile in the **Session Setup** area above to populate the debrief summary here.")
 
-        # ==========================================
-        # LIVE SCENARIO SELECTOR — the full filterable matrix, always
-        # available once Scenarios.csv is loaded (independent of whether a
-        # session has been generated yet).
-        # ==========================================
         with tab_selector:
             st.markdown("---")
             st.markdown("#### 📚 Full Scenario Matrix")
