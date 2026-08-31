@@ -525,7 +525,7 @@ def get_standard_phrase_options(grade):
     return STANDARD_PHRASE_BANK.get(grade, []) + ["Custom (type below)"]
 
 # ==========================================
-# SIDEBAR CONFIGURATION (DEFINED FIRST TO AVOID NAMEERROR)
+# SIDEBAR CONFIGURATION
 # ==========================================
 st.sidebar.markdown("<div class='sidebar-header'>📍 SLOT CONFIGURATION</div>", unsafe_allow_html=True)
 
@@ -571,269 +571,10 @@ st.sidebar.markdown("<div class='sidebar-header'>📚 DOCUMENT REFERENCES</div>"
 for tag, title in DOCUMENT_REFERENCES.items():
     st.sidebar.markdown(f"<div style='font-size: 11px; color: var(--text-color); opacity: 0.75; margin-bottom: 2px;'><b>[{tag}]</b> {title}</div>", unsafe_allow_html=True)
 
-st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v4.7 2026</div>", unsafe_allow_html=True)
+st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v5.0 2026</div>", unsafe_allow_html=True)
 
 # ==========================================
-# NAVIGATION TABS
-# ==========================================
-tab_session, tab_env, tab_orca, tab_selector, tab_debrief = st.tabs([
-    "⚙️ Session Setup", 
-    "🌐 Environment & IOS", 
-    "📋 OPC & ORCA Workflow",
-    "🎯 Scenario Selector",
-    "📊 Session Debrief"
-])
-
-with tab_session:
-    with st.container(border=True):
-        st.markdown("#### ⚙️ Session Metadata & Device Setup")
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        with m_col1:
-            session_mode = st.selectbox("Training Focus / Mode", ["EBT Evaluation & Coaching", "EBT Line-Oriented Assessment", "Recurrent Check (LPC/OPC)"])
-        with m_col2:
-            capt_name = st.text_input("Captain Name", value="Capt. Unassigned")
-        with m_col3:
-            fo_name = st.text_input("First Officer Name", value="F/O Unassigned")
-        with m_col4:
-            sim_id = st.text_input("Sim / Device ID", value="KM Malta A320 STD2.2")
-
-        p_col1, p_col2 = st.columns([1.5, 3.5])
-        with p_col1:
-            max_dod_threshold = st.number_input("Total DOD Ceiling", min_value=1, max_value=30, value=6, step=1)
-        with p_col2:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            allow_fallback = st.checkbox("Enable Smart Fallback (use closest available DOD if exact match missing)", value=True)
-
-    with st.container(border=True):
-        st.markdown("#### ⚡ Scenario Generator & Program Suite")
-        st.markdown("Configure your slot parameters via the sidebar on the left, then generate the sequenced simulator session and EBT competency rubric below.")
-        if st.button("⚡ Generate Simulator Profile", type="primary", use_container_width=True):
-            st.session_state.trigger_generation = True
-
-with tab_env:
-    with st.container(border=True):
-        st.markdown("#### ✈️ Aircraft Mass & Balance (IOS Parameters)")
-        i_col1, i_col2, i_col3, i_col4, i_col5 = st.columns(5)
-        with i_col1:
-            gw_val = st.number_input("GW (kg x1000)", min_value=40.0, max_value=79.0, value=54.6, step=0.5)
-            gw_cg = st.number_input("GW CG (%)", min_value=15.0, max_value=40.0, value=29.0, step=0.1)
-        with i_col2:
-            zfw_val = st.number_input("ZFW (kg x1000)", min_value=35.0, max_value=64.3, value=47.0, step=0.5)
-            zfw_cg = st.number_input("ZFW CG (%)", min_value=15.0, max_value=40.0, value=31.0, step=0.1)
-        with i_col3:
-            total_fuel = st.number_input("Total Fuel (kg x1000)", min_value=1.5, max_value=19.0, value=7.6, step=0.1)
-        with i_col4:
-            alt_asl = st.number_input("Init Alt (ft ASL)", min_value=0, max_value=39000, value=293)
-        with i_col5:
-            qnh_val = st.number_input("QNH (hPa)", min_value=950, max_value=1050, value=1013)
-
-    with st.container(border=True):
-        st.markdown("#### 🏛️ Major European Airport Selection & Jeppesen Layout")
-        sel_apt_key = st.selectbox("Select European Aerodrome", options=list(EUROPEAN_AIRPORTS.keys()))
-        apt_data = EUROPEAN_AIRPORTS[sel_apt_key]
-        
-        ac1, ac2 = st.columns(2)
-        with ac1:
-            apt_ref = st.text_input("Reference Airport / Active Rwy", value=f"{apt_data['icao']} / {apt_data['rwy'][0]}")
-            ils_ident = st.text_input("ILS Ident / Freq", value=apt_data['ils'])
-        with ac2:
-            loc_course = st.number_input("Loc Course (°M)", min_value=0, max_value=360, value=241)
-            apt_elev = st.number_input("Airport Elev (ft)", min_value=-100, max_value=14000, value=apt_data['elev'])
-
-        st.markdown(f"""
-        <div class="jepp-card">
-            <div class="jepp-header">✈️ JEPPESEN SCHEMATIC LAYOUT & BRIEFING — {sel_apt_key.upper()}</div>
-            <b>ICAO:</b> {apt_data['icao']} &nbsp;&nbsp;|&nbsp;&nbsp; <b>ELEV:</b> {apt_data['elev']} FT &nbsp;&nbsp;|&nbsp;&nbsp; <b>ILS / LOC:</b> {apt_data['ils']}<br/>
-            <b>PUBLISHED RUNWAYS:</b> {' | '.join(apt_data['rwy'])}<br/>
-            <b>SCHEMATIC ALIGNMENT:</b> [RWY {apt_data['rwy'][0]}] <==============================> [ILS GLIDESLOPE 3.0°]
-        </div>
-        """, unsafe_allow_html=True)
-
-    with st.container(border=True):
-        st.markdown("#### 🌐 IOS Current Conditions & Live METAR Integration")
-        live_metar_str = fetch_live_metar(apt_data['icao'])
-        st.markdown(f"""
-        <div class="ios-card" style="border-left: 3px solid #0284C7;">
-            <div class="ios-label">Live METAR Feed ({apt_data['icao']})</div>
-            <div style="font-family: monospace; color: #0284C7; font-size: 13px; margin-top: 4px;">{live_metar_str}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        w_card1, w_card2 = st.columns(2)
-        with w_card1:
-            st.markdown("<b style='color:#0284C7;'>🌬️ Surface Wind & Atmosphere</b>", unsafe_allow_html=True)
-            wc1, wc2, wc3 = st.columns(3)
-            with wc1: wind_dir = st.number_input("Wind Dir (°M)", min_value=0, max_value=360, value=360, step=10)
-            with wc2: wind_spd = st.number_input("Wind Speed (kt)", min_value=0, max_value=70, value=0)
-            with wc3: wind_gust = st.number_input("Wind Gust (kt)", min_value=0, max_value=90, value=0)
-            
-            wind_str = f"{wind_dir:03d}°M / {wind_spd} kt" + (f" G {wind_gust} kt" if wind_gust > 0 else "")
-
-            tc1, tc2, tc3 = st.columns(3)
-            with tc1: oat_temp = st.number_input("Aircraft OAT (°C)", min_value=-40, max_value=50, value=14)
-            with tc2:
-                isa_standard = 15 - (2 * (apt_elev / 1000))
-                isa_dev_calc = int(oat_temp - isa_standard)
-                isa_dev = st.number_input("ISA Dev (°C)", min_value=-30, max_value=30, value=isa_dev_calc)
-            with tc3: qnh_weather = st.number_input("QNH Ref (hPa)", min_value=950, max_value=1050, value=1013)
-
-        with w_card2:
-            st.markdown("<b style='color:#0284C7;'>🌧️ Runway Surface & Visibility Parameters</b>", unsafe_allow_html=True)
-            rc1, rc2 = st.columns(2)
-            with rc1:
-                rcam_code = st.selectbox("Runway Cnd Ref (RCAM x/x/x)", [
-                    "6/6/6 – Dry", "5/5/5 – Good (Frost / Wet <= 3mm)", "4/4/4 – Good to Medium",
-                    "3/3/3 – Medium", "2/2/2 – Medium to Poor", "1/1/1 – Poor (Ice)", "0/0/0 – Less than Poor"
-                ])
-            with rc2:
-                precip_ref = st.selectbox("Precipitation Ref", ["None", "Light Rain", "Moderate Rain", "Heavy Rain", "Light Snow", "Moderate Snow"])
-
-            vc1, vc2 = st.columns(2)
-            with vc1:
-                vis_rvr_str = st.selectbox("Visibility / RVR", ["250.00 km (CAVOK)", "10.00 km", "5000 m", "1500 m", "550 m (CAT I)", "300 m (CAT II)", "125 m (CAT III B)"], index=0)
-            with vc2:
-                rwy_lighting = st.selectbox("Runway Lighting", ["Off (0)", "Level 1", "Level 2", "Level 3 (High / Standard)", "Level 4 (Max / LVO)"], index=3)
-
-    ios_env_summary_str = f"Wind: {wind_str} | OAT: {oat_temp}°C (ISA {isa_dev:+d}°C) | QNH: {qnh_weather} hPa | Rwy Cnd: {rcam_code.split('–')[0].strip()} | Precip: {precip_ref} | Vis: {vis_rvr_str}"
-    ios_summary_str = f"Apt: {apt_ref} | GW: {gw_val}t (CG {gw_cg}%) | ZFW: {zfw_val}t | Fuel: {total_fuel}t | QNH: {qnh_val}hPa | Env: {ios_env_summary_str}"
-
-with tab_orca:
-    st.markdown("#### 📋 OPC & ORCA Workflow Suite (Syllabus Auto-Extraction & CBTA Analysis)")
-    st.markdown("Upload your simulator syllabus PDF below. The program automatically extracts distinct exercises, generating complete **4-phase EASA Observable Behaviors (OBs)**, primary target actions, and interactive **ORCA (Observation, Recording, Classification, Assessment)** toolkits.")
-
-    with st.container(border=True):
-        st.markdown("##### 📄 Simulator Program PDF Uploader & Exercise Detection")
-        if not HAS_PYPDF:
-            st.warning("⚠️ `pypdf` library is not installed in your current environment. Running in default exercise mode.")
-        
-        uploaded_prog_pdf = st.file_uploader("Upload Operator Simulator Syllabus / Lesson Plan (PDF)", type=["pdf"], key="prog_pdf_uploader_main")
-        
-        parsed_exercise_keys = list(PROGRAM_SYLLABUS_EXERCISES.keys())
-        
-        if uploaded_prog_pdf is not None and HAS_PYPDF:
-            try:
-                reader = pypdf.PdfReader(uploaded_prog_pdf)
-                pdf_text = ""
-                for page in reader.pages:
-                    pdf_text += page.extract_text() or ""
-                st.success(f"✓ Parsed {len(reader.pages)} page(s) from uploaded syllabus PDF.")
-                
-                detected_keys = []
-                for e_key, e_data in PROGRAM_SYLLABUS_EXERCISES.items():
-                    if any(kw in pdf_text.upper() for kw in e_data["keywords"]):
-                        detected_keys.append(e_key)
-                
-                if detected_keys:
-                    parsed_exercise_keys = detected_keys
-                    st.info(f"Identified {len(detected_keys)} specific exercise profiles directly from PDF content.")
-            except Exception as e:
-                st.error(f"Error reading PDF content: {e}")
-
-        st.markdown("<b>Select Exercises from Syllabus for Full OB & ORCA Analysis:</b>", unsafe_allow_html=True)
-        col_sel_all, col_sel_multi = st.columns([1, 4])
-        with col_sel_all:
-            select_all_ex = st.checkbox("Select All Exercises", value=True)
-            
-        with col_sel_multi:
-            default_selected = parsed_exercise_keys if select_all_ex else parsed_exercise_keys[:2]
-            selected_ex_keys = st.multiselect(
-                "Syllabus Exercises to Evaluate:",
-                options=parsed_exercise_keys,
-                default=default_selected,
-                format_func=lambda x: PROGRAM_SYLLABUS_EXERCISES[x]["title"],
-                label_visibility="collapsed"
-            )
-
-    if selected_ex_keys:
-        total_obs_count = sum(
-            len(step["obs"]) 
-            for k in selected_ex_keys 
-            for step in PROGRAM_SYLLABUS_EXERCISES[k]["sequence"]
-        )
-        
-        checked_o = sum(1 for k in st.session_state if k.startswith("orc_o_") and st.session_state[k])
-        checked_r = sum(1 for k in st.session_state if k.startswith("orc_r_") and st.session_state[k])
-        checked_c = sum(1 for k in st.session_state if k.startswith("orc_c_") and st.session_state[k])
-        checked_a = sum(1 for k in st.session_state if k.startswith("orc_a_") and st.session_state[k])
-        
-        orca_completion_pct = int((checked_o + checked_r + checked_c + checked_a) / (total_obs_count * 4) * 100) if total_obs_count > 0 else 0
-        irr_score = min(100, int((checked_o * 0.35 + checked_r * 0.25 + checked_c * 0.20 + checked_a * 0.20) / (total_obs_count or 1) * 100))
-
-        st.markdown("##### 📊 Automated ORCA & CBTA Real-Time Metrics")
-        m1, m2, m3, m4 = st.columns(4)
-        with m1: st.metric("Selected Modules", f"{len(selected_ex_keys)} Exercises")
-        with m2: st.metric("Target OBs Tracked", f"{total_obs_count} Behaviors")
-        with m3: st.metric("ORCA Completion", f"{orca_completion_pct}%")
-        with m4: st.metric("IRR Concordance Index", f"{irr_score}%")
-
-        st.markdown("---")
-        st.markdown("##### 📌 Granular 4-Phase Exercise Breakdown & ORCA Checklist")
-
-        for e_key in selected_ex_keys:
-            ex_data = PROGRAM_SYLLABUS_EXERCISES[e_key]
-            with st.container(border=True):
-                st.markdown(f"#### ✈️ {ex_data['title']}")
-                st.markdown(f"<div style='font-size: 13px; margin-bottom: 4px;'><b>Operational Stressor:</b> {ex_data['stressor']}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div style='font-size: 13px; color: #0284C7; font-weight: 600; margin-bottom: 12px;'>🎯 CBTA Competency Targets: {', '.join(ex_data['cbta_focus'])}</div>", unsafe_allow_html=True)
-
-                for s_idx, step in enumerate(ex_data["sequence"]):
-                    st.markdown(f"<b style='color: #0284C7; font-size: 14px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='margin-left: 10px; border-left: 3px solid #0284C7; padding-left: 12px; margin-bottom: 16px; margin-top: 4px;'>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='font-size: 13px; opacity: 0.9; margin-bottom: 8px;'><b>Primary Target Action (PTA):</b> <i>{step['pta']}</i></div>", unsafe_allow_html=True)
-                    
-                    st.markdown("<b style='font-size:12px; opacity:0.8;'>Observable Behaviors (OBs) & ORCA Protocol:</b>", unsafe_allow_html=True)
-                    for ob_idx, ob in enumerate(step["obs"]):
-                        cols = st.columns([0.06, 0.06, 0.06, 0.06, 0.76])
-                        with cols[0]: st.checkbox("O", key=f"orc_o_{e_key}_{s_idx}_{ob_idx}", help="Observation: Behavior clearly observed")
-                        with cols[1]: st.checkbox("R", key=f"orc_r_{e_key}_{s_idx}_{ob_idx}", help="Recording: FSTD telemetry / note logged")
-                        with cols[2]: st.checkbox("C", key=f"orc_c_{e_key}_{s_idx}_{ob_idx}", help="Classification: Linked to core competency")
-                        with cols[3]: st.checkbox("A", key=f"orc_a_{e_key}_{s_idx}_{ob_idx}", help="Assessment: Graded against EASA standard")
-                        with cols[4]:
-                            comp_tag = ob.get("comp", extract_ob_competency(ob["text"]) or "GEN")
-                            st.markdown(
-                                f"<span style='font-size: 13px;'>{ob['text']} "
-                                f"<span class='ref-badge'>{ob['ref']}</span> "
-                                f"<span style='background:rgba(16,185,129,0.12); color:#10B981; border:1px solid rgba(16,185,129,0.3); padding:1px 5px; border-radius:4px; font-size:10px; font-weight:700;'>{comp_tag}</span></span>", 
-                                unsafe_allow_html=True
-                            )
-                    st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.info("Select at least one exercise from the uploaded program syllabus above to view the detailed OB & ORCA analysis.")
-
-with tab_selector:
-    st.markdown("#### 🎯 Interactive Simulator Scenario Builder & Selector")
-    st.markdown("Configure slots via the sidebar, then browse the full scenario matrix here once it loads below — filter it, and see exactly which competencies each scenario targets before you generate a session.")
-
-with tab_debrief:
-    st.markdown("#### 📊 Session Debrief — Competency Coverage & Standardized Summary")
-    if "final_df" in st.session_state:
-        final_df = st.session_state.final_df
-        total_dod = final_df["DOD"].sum()
-        
-        comp_grades = {c: [] for c in COMPETENCY_KEYS}
-        for _, row in final_df.iterrows():
-            slot_num = int(row["SLOT"])
-            g = st.session_state.get(f"grade_slot_{slot_num}", 3)
-            for c in st.session_state.get("slot_competencies", {}).get(slot_num, []):
-                if g is not None: comp_grades[c].append(g)
-
-        cov_col1, cov_col2 = st.columns([1.3, 1])
-        with cov_col1:
-            st.markdown("<b>Average Grade by Competency</b>", unsafe_allow_html=True)
-            chart_df = pd.DataFrame({
-                "Competency": list(COMPETENCY_KEYS.keys()),
-                "Avg Grade": [sum(v) / len(v) if v else 0 for v in comp_grades.values()],
-                "Times Demonstrated": [len(v) for v in comp_grades.values()],
-            }).set_index("Competency")
-            st.bar_chart(chart_df["Avg Grade"])
-        with cov_col2:
-            st.markdown("<b>Coverage Count</b>", unsafe_allow_html=True)
-            st.dataframe(chart_df, use_container_width=True)
-    else:
-        st.info("Generate a session profile in the **Session Setup** workflow area to populate debrief analytics.")
-
-# ==========================================
-# DATA LOADING & GENERATION LOGIC (RUNS AFTER SIDEBAR)
+# DATA LOADING FUNCTION
 # ==========================================
 def resource_path(relative_path):
     try: base_path = sys._MEIPASS
@@ -920,6 +661,8 @@ def load_scenario_database(s_source, c_source):
     except Exception as e:
         return None, str(e)
 
+df, match_stats = load_scenario_database(scenarios_source, competency_source)
+
 def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_dod, max_dod, mode, capt, fo, sim_id_val, ios_info):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
@@ -991,10 +734,48 @@ def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_
     buffer.seek(0)
     return buffer
 
-df, match_stats = load_scenario_database(scenarios_source, competency_source)
 if df is not None:
+    rcam_code = "6/6/6 – Dry"
+    vis_rvr_str = "250.00 km (CAVOK)"
     df["TEM_THREAT"], df["TEM_ERROR"] = zip(*df.apply(lambda r: derive_tem_tags(r["EVENT"], r["PHASES"], 0, 0, rcam_code, vis_rvr_str), axis=1))
-    
+
+# ==========================================
+# NAVIGATION TABS
+# ==========================================
+tab_session, tab_env, tab_orca, tab_selector, tab_debrief = st.tabs([
+    "⚙️ Session Setup", 
+    "🌐 Environment & IOS", 
+    "📋 OPC & ORCA Workflow",
+    "🎯 Scenario Selector",
+    "📊 Session Debrief"
+])
+
+with tab_session:
+    with st.container(border=True):
+        st.markdown("#### ⚙️ Session Metadata & Device Setup")
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        with m_col1:
+            session_mode = st.selectbox("Training Focus / Mode", ["EBT Evaluation & Coaching", "EBT Line-Oriented Assessment", "Recurrent Check (LPC/OPC)"])
+        with m_col2:
+            capt_name = st.text_input("Captain Name", value="Capt. Unassigned")
+        with m_col3:
+            fo_name = st.text_input("First Officer Name", value="F/O Unassigned")
+        with m_col4:
+            sim_id = st.text_input("Sim / Device ID", value="KM Malta A320 STD2.2")
+
+        p_col1, p_col2 = st.columns([1.5, 3.5])
+        with p_col1:
+            max_dod_threshold = st.number_input("Total DOD Ceiling", min_value=1, max_value=30, value=6, step=1)
+        with p_col2:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            allow_fallback = st.checkbox("Enable Smart Fallback (use closest available DOD if exact match missing)", value=True)
+
+    with st.container(border=True):
+        st.markdown("#### ⚡ Scenario Generator & Program Suite")
+        st.markdown("Configure your slot parameters via the sidebar on the left, then generate the sequenced simulator session and EBT competency rubric below.")
+        if st.button("⚡ Generate Simulator Profile", type="primary", use_container_width=True):
+            st.session_state.trigger_generation = True
+
     if st.session_state.get("trigger_generation", False):
         selected_events = []
         used_titles = set()
@@ -1030,108 +811,405 @@ if df is not None:
         st.success("Session Profile Generated!")
 
     if "final_df" in st.session_state:
-        with tab_session:
-            if "slot_overrides" not in st.session_state:
-                st.session_state.slot_overrides = {}
+        if "slot_overrides" not in st.session_state:
+            st.session_state.slot_overrides = {}
 
-            final_df = st.session_state.final_df
-            for idx, row in final_df.iterrows():
-                s_id = int(row["SLOT"])
-                if s_id in st.session_state.slot_overrides:
-                    ov_data = st.session_state.slot_overrides[s_id]
-                    final_df.loc[idx, "EVENT"] = ov_data["EVENT"]
-                    final_df.loc[idx, "DOD"] = ov_data["DOD"]
+        final_df = st.session_state.final_df
+        for idx, row in final_df.iterrows():
+            s_id = int(row["SLOT"])
+            if s_id in st.session_state.slot_overrides:
+                ov_data = st.session_state.slot_overrides[s_id]
+                final_df.loc[idx, "EVENT"] = ov_data["EVENT"]
+                final_df.loc[idx, "DOD"] = ov_data["DOD"]
 
-            total_dod = final_df["DOD"].sum()
-            
-            st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
-            m_col1, m_col2, m_col3 = st.columns(3)
-            with m_col1: st.metric(label="Active Session Slots", value=f"{len(final_df)} Modules")
-            with m_col2: st.metric(label="Cumulative Session DOD", value=f"{total_dod} / {max_dod_threshold} Target")
-            with m_col3:
-                compliance_status = "Within Ceiling" if total_dod <= max_dod_threshold else "Exceeds Ceiling"
-                st.metric(label="DOD Compliance Status", value=compliance_status)
+        total_dod = final_df["DOD"].sum()
+        
+        st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+        m_col1, m_col2, m_col3 = st.columns(3)
+        with m_col1: st.metric(label="Active Session Slots", value=f"{len(final_df)} Modules")
+        with m_col2: st.metric(label="Cumulative Session DOD", value=f"{total_dod} / {max_dod_threshold} Target")
+        with m_col3:
+            compliance_status = "Within Ceiling" if total_dod <= max_dod_threshold else "Exceeds Ceiling"
+            st.metric(label="DOD Compliance Status", value=compliance_status)
 
-            st.markdown("#### ✈️ Sequenced Simulator Session & EBT Competency Rubric")
+        st.markdown("#### ✈️ Sequenced Simulator Session & EBT Competency Rubric (Tab 1 Independent/Random Failures)")
+        
+        instructor_grades = {}
+        instructor_notes = {}
+        slot_competencies = {}
+        
+        for idx, row in final_df.iterrows():
+            slot_num = int(row['SLOT'])
+            event_title = row['EVENT']
+            dod = int(row['DOD'])
+            phase_num = int(row['PHASES'])
+            role = row.get('ROLE', 'PF Focus')
             
-            instructor_grades = {}
-            instructor_notes = {}
-            slot_competencies = {}
-            
-            for idx, row in final_df.iterrows():
-                slot_num = int(row['SLOT'])
-                event_title = row['EVENT']
-                dod = int(row['DOD'])
-                phase_num = int(row['PHASES'])
-                role = row.get('ROLE', 'PF Focus')
+            sequence_data = PROGRAM_SYLLABUS_EXERCISES.get("EX-01_EFATO", {})["sequence"]
+            for ex_key, ex_val in PROGRAM_SYLLABUS_EXERCISES.items():
+                if any(kw in str(event_title).upper() for kw in ex_val["keywords"]):
+                    sequence_data = ex_val["sequence"]
+                    break
+
+            with st.expander(f"Slot #{slot_num:02d} — {row['PHASE_NAME']} | DOD {dod} | {event_title} ({role})", expanded=False):
+                st.markdown("""
+                <div style='background-color: var(--secondary-background-color); padding: 18px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);'>
+                    <h5 style='color: #0284C7; margin-top: 0; margin-bottom: 16px;'>⏱️ Chronological Execution Sequence & OB Markers</h5>
+                """, unsafe_allow_html=True)
                 
-                sequence_data = PROGRAM_SYLLABUS_EXERCISES.get("EX-01_EFATO", {})["sequence"]
-                for ex_key, ex_val in PROGRAM_SYLLABUS_EXERCISES.items():
-                    if any(kw in str(event_title).upper() for kw in ex_val["keywords"]):
-                        sequence_data = ex_val["sequence"]
-                        break
+                for step in sequence_data:
+                    st.markdown(f"<b style='color: var(--text-color); font-size: 15px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='margin-left: 14px; border-left: 3px solid #0284C7; padding-left: 14px; margin-bottom: 18px; margin-top: 6px;'>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='color: var(--text-color); font-size: 13.5px; margin-bottom: 10px; opacity: 0.85;'><b>Target Action (PTA):</b> {step['pta']}</div>", unsafe_allow_html=True)
+                    for ob in step['obs']:
+                        st.markdown(f"<div style='color: #10B981; font-size: 13.5px; font-weight: 600; margin-bottom: 4px;'>✓ {ob['text']} <span class='ref-badge' title='{DOCUMENT_REFERENCES.get(ob['ref'], ob['ref'])}'>{ob['ref']}</span></div>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
 
-                with st.expander(f"Slot #{slot_num:02d} — {row['PHASE_NAME']} | DOD {dod} | {event_title} ({role})", expanded=False):
-                    st.markdown("""
-                    <div style='background-color: var(--secondary-background-color); padding: 18px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);'>
-                        <h5 style='color: #0284C7; margin-top: 0; margin-bottom: 16px;'>⏱️ Chronological Execution Sequence & OB Markers</h5>
-                    """, unsafe_allow_html=True)
+                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:11.5px; opacity:0.7; margin-bottom:4px;'>Competencies exercised by this scenario:</div>{competency_chip_row(row.get('COMPETENCIES', []))}", unsafe_allow_html=True)
+                demonstrated = st.multiselect(
+                    f"✅ Competencies Actually Demonstrated (Slot #{slot_num:02d})",
+                    options=list(COMPETENCY_KEYS.keys()),
+                    default=list(row.get("COMPETENCIES", [])),
+                    format_func=lambda x: f"{x} – {COMPETENCY_KEYS[x]}",
+                    key=f"comp_demo_{slot_num}"
+                )
+                slot_competencies[slot_num] = demonstrated
+
+                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                g_col1, g_col2 = st.columns([1, 2])
+                with g_col1:
+                    instructor_grades[slot_num] = st.selectbox(
+                        f"KM Malta Grade (Slot #{slot_num:02d})",
+                        options=[5, 4, 3, 2, 1],
+                        index=2,
+                        format_func=lambda x: {
+                            5: "Grade 5 (Excellent)",
+                            4: "Grade 4 (Very Good)",
+                            3: "Grade 3 (Good / Standard)",
+                            2: "Grade 2 (Min Acceptable - Review)",
+                            1: "Grade 1 (Unsatisfactory)"
+                        }[x],
+                        key=f"grade_slot_{slot_num}"
+                    )
+                with g_col2:
+                    grade_now = instructor_grades[slot_num]
+                    phrase_choice = st.selectbox(
+                        f"Standardized Comment (Slot #{slot_num:02d})",
+                        options=get_standard_phrase_options(grade_now),
+                        key=f"phrase_slot_{slot_num}"
+                    )
+                    if phrase_choice == "Custom (type below)":
+                        instructor_notes[slot_num] = st.text_input(f"Custom Note (Slot #{slot_num:02d})", value="", key=f"note_slot_{slot_num}")
+                    else:
+                        extra_detail = st.text_input(f"Optional detail (Slot #{slot_num:02d})", value="", key=f"note_extra_{slot_num}")
+                        instructor_notes[slot_num] = f"{phrase_choice} {extra_detail.strip()}" if extra_detail.strip() else phrase_choice
+
+        st.session_state.slot_competencies = slot_competencies
+        st.markdown("---")
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            csv_export = final_df.to_csv(index=False)
+            st.download_button(label="📥 Download Session Schedule (CSV)", data=csv_export, file_name=f"sim_session_DOD_{max_dod_threshold}.csv", mime="text/csv", use_container_width=True, key="download_csv_button")
+        with col_exp2:
+            ios_summary_str = f"Apt: LMML | GW: 54.6t | ZFW: 47.0t | Fuel: 7.6t"
+            pdf_data = generate_pdf_briefing(final_df, instructor_grades, instructor_notes, slot_competencies, total_dod, max_dod_threshold, session_mode, capt_name, fo_name, sim_id, ios_summary_str)
+            st.download_button(label="📄 Download Completed KM Malta EBT PDF Record", data=pdf_data, file_name=f"km_malta_ebt_record_{max_dod_threshold}.pdf", mime="application/pdf", use_container_width=True, key="download_pdf_button")
+
+with tab_env:
+    with st.container(border=True):
+        st.markdown("#### ✈️ Aircraft Mass & Balance (IOS Parameters)")
+        i_col1, i_col2, i_col3, i_col4, i_col5 = st.columns(5)
+        with i_col1:
+            gw_val = st.number_input("GW (kg x1000)", min_value=40.0, max_value=79.0, value=54.6, step=0.5)
+            gw_cg = st.number_input("GW CG (%)", min_value=15.0, max_value=40.0, value=29.0, step=0.1)
+        with i_col2:
+            zfw_val = st.number_input("ZFW (kg x1000)", min_value=35.0, max_value=64.3, value=47.0, step=0.5)
+            zfw_cg = st.number_input("ZFW CG (%)", min_value=15.0, max_value=40.0, value=31.0, step=0.1)
+        with i_col3:
+            total_fuel = st.number_input("Total Fuel (kg x1000)", min_value=1.5, max_value=19.0, value=7.6, step=0.1)
+        with i_col4:
+            alt_asl = st.number_input("Init Alt (ft ASL)", min_value=0, max_value=39000, value=293)
+        with i_col5:
+            qnh_val = st.number_input("QNH (hPa)", min_value=950, max_value=1050, value=1013)
+
+    with st.container(border=True):
+        st.markdown("#### 🏛️ Major European Airport Selection & Jeppesen Layout")
+        sel_apt_key = st.selectbox("Select European Aerodrome", options=list(EUROPEAN_AIRPORTS.keys()))
+        apt_data = EUROPEAN_AIRPORTS[sel_apt_key]
+        
+        ac1, ac2 = st.columns(2)
+        with ac1:
+            apt_ref = st.text_input("Reference Airport / Active Rwy", value=f"{apt_data['icao']} / {apt_data['rwy'][0]}")
+            ils_ident = st.text_input("ILS Ident / Freq", value=apt_data['ils'])
+        with ac2:
+            loc_course = st.number_input("Loc Course (°M)", min_value=0, max_value=360, value=241)
+            apt_elev = st.number_input("Airport Elev (ft)", min_value=-100, max_value=14000, value=apt_data['elev'])
+
+        st.markdown(f"""
+        <div class="jepp-card">
+            <div class="jepp-header">✈️ JEPPESEN SCHEMATIC LAYOUT & BRIEFING — {sel_apt_key.upper()}</div>
+            <b>ICAO:</b> {apt_data['icao']} &nbsp;&nbsp;|&nbsp;&nbsp; <b>ELEV:</b> {apt_data['elev']} FT &nbsp;&nbsp;|&nbsp;&nbsp; <b>ILS / LOC:</b> {apt_data['ils']}<br/>
+            <b>PUBLISHED RUNWAYS:</b> {' | '.join(apt_data['rwy'])}<br/>
+            <b>SCHEMATIC ALIGNMENT:</b> [RWY {apt_data['rwy'][0]}] <==============================> [ILS GLIDESLOPE 3.0°]
+        </div>
+        """, unsafe_allow_html=True)
+
+    with st.container(border=True):
+        st.markdown("#### 🌐 IOS Current Conditions & Live METAR Integration")
+        live_metar_str = fetch_live_metar(apt_data['icao'])
+        st.markdown(f"""
+        <div class="ios-card" style="border-left: 3px solid #0284C7;">
+            <div class="ios-label">Live METAR Feed ({apt_data['icao']})</div>
+            <div style="font-family: monospace; color: #0284C7; font-size: 13px; margin-top: 4px;">{live_metar_str}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        w_card1, w_card2 = st.columns(2)
+        with w_card1:
+            st.markdown("<b style='color:#0284C7;'>🌬️ Surface Wind & Atmosphere</b>", unsafe_allow_html=True)
+            wc1, wc2, wc3 = st.columns(3)
+            with wc1: wind_dir = st.number_input("Wind Dir (°M)", min_value=0, max_value=360, value=360, step=10)
+            with wc2: wind_spd = st.number_input("Wind Speed (kt)", min_value=0, max_value=70, value=0)
+            with wc3: wind_gust = st.number_input("Wind Gust (kt)", min_value=0, max_value=90, value=0)
+            
+            wind_str = f"{wind_dir:03d}°M / {wind_spd} kt" + (f" G {wind_gust} kt" if wind_gust > 0 else "")
+
+            tc1, tc2, tc3 = st.columns(3)
+            with tc1: oat_temp = st.number_input("Aircraft OAT (°C)", min_value=-40, max_value=50, value=14)
+            with tc2:
+                isa_standard = 15 - (2 * (apt_elev / 1000))
+                isa_dev_calc = int(oat_temp - isa_standard)
+                isa_dev = st.number_input("ISA Dev (°C)", min_value=-30, max_value=30, value=isa_dev_calc)
+            with tc3: qnh_weather = st.number_input("QNH Ref (hPa)", min_value=950, max_value=1050, value=1013)
+
+        with w_card2:
+            st.markdown("<b style='color:#0284C7;'>🌧️ Runway Surface & Visibility Parameters</b>", unsafe_allow_html=True)
+            rc1, rc2 = st.columns(2)
+            with rc1:
+                rcam_code = st.selectbox("Runway Cnd Ref (RCAM x/x/x)", [
+                    "6/6/6 – Dry", "5/5/5 – Good (Frost / Wet <= 3mm)", "4/4/4 – Good to Medium",
+                    "3/3/3 – Medium", "2/2/2 – Medium to Poor", "1/1/1 – Poor (Ice)", "0/0/0 – Less than Poor"
+                ])
+            with rc2:
+                precip_ref = st.selectbox("Precipitation Ref", ["None", "Light Rain", "Moderate Rain", "Heavy Rain", "Light Snow", "Moderate Snow"])
+
+            vc1, vc2 = st.columns(2)
+            with vc1:
+                vis_rvr_str = st.selectbox("Visibility / RVR", ["250.00 km (CAVOK)", "10.00 km", "5000 m", "1500 m", "550 m (CAT I)", "300 m (CAT II)", "125 m (CAT III B)"], index=0)
+            with vc2:
+                rwy_lighting = st.selectbox("Runway Lighting", ["Off (0)", "Level 1", "Level 2", "Level 3 (High / Standard)", "Level 4 (Max / LVO)"], index=3)
+
+with tab_orca:
+    st.markdown("#### 📋 OPC & ORCA Workflow Suite (Uploaded Syllabus Analysis & Debrief)")
+    st.markdown("Upload your operator simulator syllabus PDF to analyze structured syllabus exercises, track 4-phase EASA Observable Behaviors (OBs), and generate dedicated debriefs and export reports based on uploaded program failures.")
+
+    with st.container(border=True):
+        st.markdown("##### 📄 Simulator Program PDF Uploader & Exercise Detection")
+        if not HAS_PYPDF:
+            st.warning("⚠️ `pypdf` library is not installed in your current environment. Running in default exercise mode.")
+        
+        uploaded_prog_pdf = st.file_uploader("Upload Operator Simulator Syllabus / Lesson Plan (PDF)", type=["pdf"], key="prog_pdf_uploader_main")
+        
+        parsed_exercise_keys = list(PROGRAM_SYLLABUS_EXERCISES.keys())
+        
+        if uploaded_prog_pdf is not None and HAS_PYPDF:
+            try:
+                reader = pypdf.PdfReader(uploaded_prog_pdf)
+                pdf_text = ""
+                for page in reader.pages:
+                    pdf_text += page.extract_text() or ""
+                st.success(f"✓ Parsed {len(reader.pages)} page(s) from uploaded syllabus PDF.")
+                
+                detected_keys = []
+                for e_key, e_data in PROGRAM_SYLLABUS_EXERCISES.items():
+                    if any(kw in pdf_text.upper() for kw in e_data["keywords"]):
+                        detected_keys.append(e_key)
+                
+                if detected_keys:
+                    parsed_exercise_keys = detected_keys
+                    st.info(f"Identified {len(detected_keys)} specific exercise profiles directly from PDF content.")
+            except Exception as e:
+                st.error(f"Error reading PDF content: {e}")
+
+        st.markdown("<b>Select Exercises from Syllabus for Full OB & ORCA Analysis:</b>", unsafe_allow_html=True)
+        col_sel_all, col_sel_multi = st.columns([1, 4])
+        with col_sel_all:
+            select_all_ex = st.checkbox("Select All Uploaded Exercises", value=True, key="select_all_uploaded_ex")
+            
+        with col_sel_multi:
+            default_selected = parsed_exercise_keys if select_all_ex else parsed_exercise_keys[:2]
+            selected_ex_keys = st.multiselect(
+                "Uploaded Syllabus Exercises to Evaluate:",
+                options=parsed_exercise_keys,
+                default=default_selected,
+                format_func=lambda x: PROGRAM_SYLLABUS_EXERCISES[x]["title"],
+                key="multiselect_uploaded_ex",
+                label_visibility="collapsed"
+            )
+
+    if selected_ex_keys:
+        total_obs_count = sum(
+            len(step["obs"]) 
+            for k in selected_ex_keys 
+            for step in PROGRAM_SYLLABUS_EXERCISES[k]["sequence"]
+        )
+        
+        checked_o = sum(1 for k in st.session_state if k.startswith("orc_o_") and st.session_state.get(k))
+        checked_r = sum(1 for k in st.session_state if k.startswith("orc_r_") and st.session_state.get(k))
+        checked_c = sum(1 for k in st.session_state if k.startswith("orc_c_") and st.session_state.get(k))
+        checked_a = sum(1 for k in st.session_state if k.startswith("orc_a_") and st.session_state.get(k))
+        
+        orca_completion_pct = int((checked_o + checked_r + checked_c + checked_a) / (total_obs_count * 4) * 100) if total_obs_count > 0 else 0
+        irr_score = min(100, int((checked_o * 0.35 + checked_r * 0.25 + checked_c * 0.20 + checked_a * 0.20) / (total_obs_count or 1) * 100))
+
+        st.markdown("##### 📊 Uploaded Program ORCA & CBTA Real-Time Metrics")
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.metric("Syllabus Modules", f"{len(selected_ex_keys)} Exercises")
+        with m2: st.metric("Target OBs Tracked", f"{total_obs_count} Behaviors")
+        with m3: st.metric("ORCA Completion", f"{orca_completion_pct}%")
+        with m4: st.metric("IRR Concordance Index", f"{irr_score}%")
+
+        st.markdown("---")
+        st.markdown("##### 📌 Granular 4-Phase Uploaded Syllabus Exercise Breakdown & ORCA Checklist")
+
+        uploaded_grades = {}
+        uploaded_notes = {}
+        uploaded_comp_mapping = {}
+
+        for e_key in selected_ex_keys:
+            ex_data = PROGRAM_SYLLABUS_EXERCISES[e_key]
+            with st.container(border=True):
+                st.markdown(f"#### ✈️ {ex_data['title']}")
+                st.markdown(f"<div style='font-size: 13px; margin-bottom: 4px;'><b>Uploaded Syllabus Stressor / Failure:</b> {ex_data['stressor']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 13px; color: #0284C7; font-weight: 600; margin-bottom: 12px;'>🎯 CBTA Competency Targets: {', '.join(ex_data['cbta_focus'])}</div>", unsafe_allow_html=True)
+
+                for s_idx, step in enumerate(ex_data["sequence"]):
+                    st.markdown(f"<b style='color: #0284C7; font-size: 14px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='margin-left: 10px; border-left: 3px solid #0284C7; padding-left: 12px; margin-bottom: 16px; margin-top: 4px;'>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size: 13px; opacity: 0.9; margin-bottom: 8px;'><b>Primary Target Action (PTA):</b> <i>{step['pta']}</i></div>", unsafe_allow_html=True)
                     
-                    for step in sequence_data:
-                        st.markdown(f"<b style='color: var(--text-color); font-size: 15px;'>{step['phase_name']}</b>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='margin-left: 14px; border-left: 3px solid #0284C7; padding-left: 14px; margin-bottom: 18px; margin-top: 6px;'>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='color: var(--text-color); font-size: 13.5px; margin-bottom: 10px; opacity: 0.85;'><b>Target Action (PTA):</b> {step['pta']}</div>", unsafe_allow_html=True)
-                        for ob in step['obs']:
-                            st.markdown(f"<div style='color: #10B981; font-size: 13.5px; font-weight: 600; margin-bottom: 4px;'>✓ {ob['text']} <span class='ref-badge' title='{DOCUMENT_REFERENCES.get(ob['ref'], ob['ref'])}'>{ob['ref']}</span></div>", unsafe_allow_html=True)
-                        st.markdown("</div>", unsafe_allow_html=True)
+                    st.markdown("<b style='font-size:12px; opacity:0.8;'>Observable Behaviors (OBs) & ORCA Protocol:</b>", unsafe_allow_html=True)
+                    for ob_idx, ob in enumerate(step["obs"]):
+                        cols = st.columns([0.06, 0.06, 0.06, 0.06, 0.76])
+                        with cols[0]: st.checkbox("O", key=f"orc_o_{e_key}_{s_idx}_{ob_idx}", help="Observation: Behavior clearly observed")
+                        with cols[1]: st.checkbox("R", key=f"orc_r_{e_key}_{s_idx}_{ob_idx}", help="Recording: FSTD telemetry / note logged")
+                        with cols[2]: st.checkbox("C", key=f"orc_c_{e_key}_{s_idx}_{ob_idx}", help="Classification: Linked to core competency")
+                        with cols[3]: st.checkbox("A", key=f"orc_a_{e_key}_{s_idx}_{ob_idx}", help="Assessment: Graded against EASA standard")
+                        with cols[4]:
+                            comp_tag = ob.get("comp", extract_ob_competency(ob["text"]) or "GEN")
+                            st.markdown(
+                                f"<span style='font-size: 13px;'>{ob['text']} "
+                                f"<span class='ref-badge'>{ob['ref']}</span> "
+                                f"<span style='background:rgba(16,185,129,0.12); color:#10B981; border:1px solid rgba(16,185,129,0.3); padding:1px 5px; border-radius:4px; font-size:10px; font-weight:700;'>{comp_tag}</span></span>", 
+                                unsafe_allow_html=True
+                            )
                     st.markdown("</div>", unsafe_allow_html=True)
 
-                    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='font-size:11.5px; opacity:0.7; margin-bottom:4px;'>Competencies exercised by this scenario:</div>{competency_chip_row(row.get('COMPETENCIES', []))}", unsafe_allow_html=True)
-                    demonstrated = st.multiselect(
-                        f"✅ Competencies Actually Demonstrated (Slot #{slot_num:02d})",
-                        options=list(COMPETENCY_KEYS.keys()),
-                        default=list(row.get("COMPETENCIES", [])),
-                        format_func=lambda x: f"{x} – {COMPETENCY_KEYS[x]}",
-                        key=f"comp_demo_{slot_num}"
+                # Individual Grading for Uploaded Syllabus Exercise
+                up_g, up_n = st.columns([1, 2])
+                with up_g:
+                    uploaded_grades[e_key] = st.selectbox(
+                        f"Grade ({ex_data['title'][:25]}...)",
+                        options=[5, 4, 3, 2, 1],
+                        index=2,
+                        key=f"up_grade_{e_key}"
                     )
-                    slot_competencies[slot_num] = demonstrated
+                with up_n:
+                    uploaded_notes[e_key] = st.text_input(
+                        f"Instructor Debrief Note ({ex_data['title'][:25]}...)",
+                        value="Syllabus exercise executed to standard.",
+                        key=f"up_note_{e_key}"
+                    )
+                uploaded_comp_mapping[e_key] = ex_data["cbta_focus"]
 
-                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                    g_col1, g_col2 = st.columns([1, 2])
-                    with g_col1:
-                        instructor_grades[slot_num] = st.selectbox(
-                            f"KM Malta Grade (Slot #{slot_num:02d})",
-                            options=[5, 4, 3, 2, 1],
-                            index=2,
-                            format_func=lambda x: {
-                                5: "Grade 5 (Excellent)",
-                                4: "Grade 4 (Very Good)",
-                                3: "Grade 3 (Good / Standard)",
-                                2: "Grade 2 (Min Acceptable - Review)",
-                                1: "Grade 1 (Unsatisfactory)"
-                            }[x],
-                            key=f"grade_slot_{slot_num}"
-                        )
-                    with g_col2:
-                        grade_now = instructor_grades[slot_num]
-                        phrase_choice = st.selectbox(
-                            f"Standardized Comment (Slot #{slot_num:02d})",
-                            options=get_standard_phrase_options(grade_now),
-                            key=f"phrase_slot_{slot_num}"
-                        )
-                        if phrase_choice == "Custom (type below)":
-                            instructor_notes[slot_num] = st.text_input(f"Custom Note (Slot #{slot_num:02d})", value="", key=f"note_slot_{slot_num}")
-                        else:
-                            extra_detail = st.text_input(f"Optional detail (Slot #{slot_num:02d})", value="", key=f"note_extra_{slot_num}")
-                            instructor_notes[slot_num] = f"{phrase_choice} {extra_detail.strip()}" if extra_detail.strip() else phrase_choice
+        # Dedicated Debrief & Export for Uploaded Program Failures
+        st.markdown("---")
+        st.markdown("#### 📊 Uploaded Syllabus Session Debrief & Export Suite")
+        
+        up_recs = []
+        for ek in selected_ex_keys:
+            ed = PROGRAM_SYLLABUS_EXERCISES[ek]
+            up_recs.append({
+                "Module / Failure": ed["title"],
+                "Stressor / Failure Type": ed["stressor"],
+                "Grade": uploaded_grades.get(ek, 3),
+                "Debrief Notes": uploaded_notes.get(ek, ""),
+                "Competencies": ", ".join(uploaded_comp_mapping.get(ek, []))
+            })
+        df_uploaded_session = pd.DataFrame(up_recs)
+        st.dataframe(df_uploaded_session, use_container_width=True, hide_index=True)
 
-            st.session_state.slot_competencies = slot_competencies
-            st.markdown("---")
-            col_exp1, col_exp2 = st.columns(2)
-            with col_exp1:
-                csv_export = final_df.to_csv(index=False)
-                st.download_button(label="📥 Download Session Schedule (CSV)", data=csv_export, file_name=f"sim_session_DOD_{max_dod_threshold}.csv", mime="text/csv", use_container_width=True, key="download_csv_button")
-            with col_exp2:
-                pdf_data = generate_pdf_briefing(final_df, instructor_grades, instructor_notes, slot_competencies, total_dod, max_dod_threshold, session_mode, capt_name, fo_name, sim_id, ios_summary_str)
-                st.download_button(label="📄 Download Completed KM Malta EBT PDF Record", data=pdf_data, file_name=f"km_malta_ebt_record_{max_dod_threshold}.pdf", mime="application/pdf", use_container_width=True, key="download_pdf_button")
+        col_up_csv, col_up_pdf = st.columns(2)
+        with col_up_csv:
+            csv_up_export = df_uploaded_session.to_csv(index=False)
+            st.download_button(label="📥 Download Uploaded Syllabus Schedule (CSV)", data=csv_up_export, file_name="uploaded_syllabus_session_report.csv", mime="text/csv", use_container_width=True, key="dl_up_csv")
+        with col_up_pdf:
+            pdf_up_data = generate_pdf_briefing(
+                pd.DataFrame([{
+                    "SLOT": i+1,
+                    "PHASE_NAME": f"Syllabus Ph {PROGRAM_SYLLABUS_EXERCISES[k]['phase']}",
+                    "EVENT": PROGRAM_SYLLABUS_EXERCISES[k]["title"],
+                    "DOD": 2,
+                    "ROLE": "PF / PM"
+                } for i, k in enumerate(selected_ex_keys)]),
+                {i+1: uploaded_grades[k] for i, k in enumerate(selected_ex_keys)},
+                {i+1: uploaded_notes[k] for i, k in enumerate(selected_ex_keys)},
+                {i+1: uploaded_comp_mapping[k] for i, k in enumerate(selected_ex_keys)},
+                len(selected_ex_keys) * 2, len(selected_ex_keys) * 3,
+                "Syllabus Program Evaluation", capt_name, fo_name, sim_id, "Uploaded PDF Syllabus Review"
+            )
+            st.download_button(label="📄 Download Uploaded Syllabus EBT PDF Report", data=pdf_up_data, file_name="uploaded_syllabus_ebt_record.pdf", mime="application/pdf", use_container_width=True, key="dl_up_pdf")
+
+    else:
+        st.info("Select at least one exercise from the uploaded program syllabus above to view the detailed OB & ORCA analysis and debrief suite.")
+
+with tab_selector:
+    st.markdown("#### 🎯 Interactive Simulator Scenario Builder & Selector")
+    st.markdown("Filter the full scenario matrix below to inspect all available events, DOD levels, and targeted competencies before generating your session.")
+    
+    if df is not None:
+        f_col1, f_col2, f_col3 = st.columns(3)
+        with f_col1: f_phase = st.selectbox("Filter by Phase", options=["Any"] + ALL_PHASE_KEYS, format_func=lambda x: x if x == "Any" else PHASE_NAMES[x], key="sel_filter_phase")
+        with f_col2: f_dod = st.selectbox("Filter by DOD", options=["Any", 1, 2, 3], key="sel_filter_dod")
+        with f_col3: f_comp = st.selectbox("Filter by Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key="sel_filter_comp")
+
+        view_df = df.copy()
+        if f_phase != "Any": view_df = view_df[view_df["PHASES"] == f_phase]
+        if f_dod != "Any": view_df = view_df[view_df["DOD"] == f_dod]
+        if f_comp != "Any": view_df = view_df[view_df["COMPETENCIES"].apply(lambda c: f_comp in c)]
+
+        st.caption(f"{len(view_df)} of {len(df)} scenario/phase rows match the current filters.")
+        display_df = view_df[["EVENT", "PHASES", "DOD", "ATA", "COMPETENCIES"]].copy()
+        display_df["PHASES"] = display_df["PHASES"].map(PHASE_NAMES)
+        display_df["COMPETENCIES"] = display_df["COMPETENCIES"].apply(lambda c: ", ".join(c) if c else "—")
+        st.dataframe(display_df, use_container_width=True, hide_index=True, height=450)
+    else:
+        st.warning("Scenario database not loaded.")
+
+with tab_debrief:
+    st.markdown("#### 📊 Session Debrief — Competency Coverage & Standardized Summary")
+    if "final_df" in st.session_state:
+        final_df = st.session_state.final_df
+        comp_grades = {c: [] for c in COMPETENCY_KEYS}
+        for _, row in final_df.iterrows():
+            slot_num = int(row["SLOT"])
+            g = st.session_state.get(f"grade_slot_{slot_num}", 3)
+            for c in st.session_state.get("slot_competencies", {}).get(slot_num, []):
+                if g is not None: comp_grades[c].append(g)
+
+        cov_col1, cov_col2 = st.columns([1.3, 1])
+        with cov_col1:
+            st.markdown("<b>Average Grade by Competency</b>", unsafe_allow_html=True)
+            chart_df = pd.DataFrame({
+                "Competency": list(COMPETENCY_KEYS.keys()),
+                "Avg Grade": [sum(v) / len(v) if v else 0 for v in comp_grades.values()],
+                "Times Demonstrated": [len(v) for v in comp_grades.values()],
+            }).set_index("Competency")
+            st.bar_chart(chart_df["Avg Grade"])
+        with cov_col2:
+            st.markdown("<b>Coverage Count</b>", unsafe_allow_html=True)
+            st.dataframe(chart_df, use_container_width=True)
+    else:
+        st.info("Generate a session profile in the **Session Setup** workflow area to populate debrief analytics.")
