@@ -525,6 +525,55 @@ def get_standard_phrase_options(grade):
     return STANDARD_PHRASE_BANK.get(grade, []) + ["Custom (type below)"]
 
 # ==========================================
+# SIDEBAR CONFIGURATION (DEFINED FIRST TO AVOID NAMEERROR)
+# ==========================================
+st.sidebar.markdown("<div class='sidebar-header'>📍 SLOT CONFIGURATION</div>", unsafe_allow_html=True)
+
+if "slot_list" not in st.session_state:
+    st.session_state.slot_list = [
+        {"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False},
+        {"phase": 2, "dod": 2, "role": "PF Focus", "type": "Any", "mandatory": True},
+        {"phase": 6, "dod": 2, "role": "PM Focus", "type": "Any", "mandatory": False},
+        {"phase": 7, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False}
+    ]
+
+btn_c1, btn_c2 = st.sidebar.columns(2)
+if btn_c1.button("➕ Add Slot", use_container_width=True):
+    if len(st.session_state.slot_list) < 12:
+        st.session_state.slot_list.append({"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False})
+        st.rerun()
+
+if btn_c2.button("❌ Remove", use_container_width=True):
+    if len(st.session_state.slot_list) > 1:
+        st.session_state.slot_list.pop()
+        st.rerun()
+
+slot_configurations = []
+for i in range(len(st.session_state.slot_list)):
+    slot_data = st.session_state.slot_list[i]
+    p_val = st.sidebar.selectbox("Phase", options=ALL_PHASE_KEYS, index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0, format_func=lambda x: f"Ph {x}: {PHASE_NAMES[x].split('–')[1].strip()}", key=f"phase_sel_{i}", label_visibility="collapsed")
+    d_val = st.sidebar.selectbox("DOD", options=[1, 2, 3], index=slot_data["dod"]-1, format_func=lambda x: f"DOD {x}", key=f"dod_sel_{i}", label_visibility="collapsed")
+    role_val = st.sidebar.selectbox("Role", options=ROLE_OPTIONS, index=ROLE_OPTIONS.index(slot_data["role"]) if slot_data["role"] in ROLE_OPTIONS else 0, key=f"role_sel_{i}", label_visibility="collapsed")
+    type_val = st.sidebar.selectbox("Category", options=["Any", "Technical Failure", "Non-Technical / CRM (Non-ATA)", "ATA Specific"], key=f"type_sel_{i}", label_visibility="collapsed")
+    
+    ata_val = st.sidebar.number_input("ATA Chapter", min_value=11, max_value=80, key=f"ata_sel_{i}") if type_val == "ATA Specific" else None
+    comp_val = st.sidebar.selectbox("Target Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key=f"comp_sel_{i}", label_visibility="collapsed")
+    is_mandatory = st.sidebar.checkbox("Pin Exercise", value=slot_data.get("mandatory", False), key=f"mand_sel_{i}")
+    
+    slot_configurations.append({"slot": i + 1, "phase": int(p_val), "dod": int(d_val), "role": role_val, "type": type_val, "ata": ata_val, "competency": comp_val, "mandatory": is_mandatory})
+
+st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
+uploaded_scen = st.sidebar.file_uploader("Upload Scenarios.csv", type=["csv"])
+uploaded_comp = st.sidebar.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags.")
+
+st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
+st.sidebar.markdown("<div class='sidebar-header'>📚 DOCUMENT REFERENCES</div>", unsafe_allow_html=True)
+for tag, title in DOCUMENT_REFERENCES.items():
+    st.sidebar.markdown(f"<div style='font-size: 11px; color: var(--text-color); opacity: 0.75; margin-bottom: 2px;'><b>[{tag}]</b> {title}</div>", unsafe_allow_html=True)
+
+st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v4.7 2026</div>", unsafe_allow_html=True)
+
+# ==========================================
 # NAVIGATION TABS
 # ==========================================
 tab_session, tab_env, tab_orca, tab_selector, tab_debrief = st.tabs([
@@ -555,16 +604,11 @@ with tab_session:
             st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
             allow_fallback = st.checkbox("Enable Smart Fallback (use closest available DOD if exact match missing)", value=True)
 
-    # Restored Scenario Program Generator Button inside the Session Setup Tab
     with st.container(border=True):
         st.markdown("#### ⚡ Scenario Generator & Program Suite")
         st.markdown("Configure your slot parameters via the sidebar on the left, then generate the sequenced simulator session and EBT competency rubric below.")
         if st.button("⚡ Generate Simulator Profile", type="primary", use_container_width=True):
             st.session_state.trigger_generation = True
-
-    if st.session_state.get("trigger_generation", False):
-        # We process generation and display inline in Tab 1
-        pass
 
 with tab_env:
     with st.container(border=True):
@@ -789,7 +833,7 @@ with tab_debrief:
         st.info("Generate a session profile in the **Session Setup** workflow area to populate debrief analytics.")
 
 # ==========================================
-# DATA LOADING & GENERATION LOGIC (TAB 1 INTEGRATION)
+# DATA LOADING & GENERATION LOGIC (RUNS AFTER SIDEBAR)
 # ==========================================
 def resource_path(relative_path):
     try: base_path = sys._MEIPASS
@@ -799,8 +843,8 @@ def resource_path(relative_path):
     parent_path = os.path.join(os.path.dirname(base_path), relative_path)
     return parent_path if os.path.exists(parent_path) else local_path
 
-scenarios_source = uploaded_scen if 'uploaded_scen' in locals() and uploaded_scen is not None else resource_path("Scenarios.csv")
-competency_source = uploaded_comp if 'uploaded_comp' in locals() and uploaded_comp is not None else (resource_path("Keypams.xlsx") if os.path.exists(resource_path("Keypams.xlsx")) else None)
+scenarios_source = uploaded_scen if uploaded_scen is not None else resource_path("Scenarios.csv")
+competency_source = uploaded_comp if uploaded_comp is not None else (resource_path("Keypams.xlsx") if os.path.exists(resource_path("Keypams.xlsx")) else None)
 
 @st.cache_data(show_spinner="Loading and caching matrix scenarios...")
 def load_scenario_database(s_source, c_source):
@@ -1091,62 +1135,3 @@ if df is not None:
             with col_exp2:
                 pdf_data = generate_pdf_briefing(final_df, instructor_grades, instructor_notes, slot_competencies, total_dod, max_dod_threshold, session_mode, capt_name, fo_name, sim_id, ios_summary_str)
                 st.download_button(label="📄 Download Completed KM Malta EBT PDF Record", data=pdf_data, file_name=f"km_malta_ebt_record_{max_dod_threshold}.pdf", mime="application/pdf", use_container_width=True, key="download_pdf_button")
-
-# ==========================================
-# ROBUST SIDEBAR: SLOTS CONFIGURATION & REFERENCES FOOTER
-# ==========================================
-st.sidebar.markdown("<div class='sidebar-header'>📍 SLOT CONFIGURATION</div>", unsafe_allow_html=True)
-
-if "slot_list" not in st.session_state:
-    st.session_state.slot_list = [
-        {"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False},
-        {"phase": 2, "dod": 2, "role": "PF Focus", "type": "Any", "mandatory": True},
-        {"phase": 6, "dod": 2, "role": "PM Focus", "type": "Any", "mandatory": False},
-        {"phase": 7, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False}
-    ]
-
-btn_c1, btn_c2 = st.sidebar.columns(2)
-if btn_c1.button("➕ Add Slot", use_container_width=True):
-    if len(st.session_state.slot_list) < 12:
-        st.session_state.slot_list.append({"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False})
-        st.rerun()
-
-if btn_c2.button("❌ Remove", use_container_width=True):
-    if len(st.session_state.slot_list) > 1:
-        st.session_state.slot_list.pop()
-        st.rerun()
-
-current_total_dod = sum([st.session_state.get(f"dod_sel_{i}", st.session_state.slot_list[i]["dod"]) for i in range(len(st.session_state.slot_list))])
-
-if current_total_dod > max_dod_threshold:
-    st.sidebar.markdown(f"<div class='status-badge-warn'>⚠️ DOD Ceiling Exceeded ({current_total_dod} / {max_dod_threshold})</div>", unsafe_allow_html=True)
-else:
-    st.sidebar.markdown(f"<div class='status-badge-ok'>✓ Target DOD: {current_total_dod} / {max_dod_threshold}</div>", unsafe_allow_html=True)
-
-st.sidebar.markdown("<div style='margin: 10px 0; border-bottom: 1px solid rgba(128,128,128,0.2);'></div>", unsafe_allow_html=True)
-
-slot_configurations = []
-for i in range(len(st.session_state.slot_list)):
-    slot_data = st.session_state.slot_list[i]
-    p_val = st.sidebar.selectbox("Phase", options=ALL_PHASE_KEYS, index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0, format_func=lambda x: f"Ph {x}: {PHASE_NAMES[x].split('–')[1].strip()}", key=f"phase_sel_{i}", label_visibility="collapsed")
-    d_val = st.sidebar.selectbox("DOD", options=[1, 2, 3], index=slot_data["dod"]-1, format_func=lambda x: f"DOD {x}", key=f"dod_sel_{i}", label_visibility="collapsed")
-    role_val = st.sidebar.selectbox("Role", options=ROLE_OPTIONS, index=ROLE_OPTIONS.index(slot_data["role"]) if slot_data["role"] in ROLE_OPTIONS else 0, key=f"role_sel_{i}", label_visibility="collapsed")
-    type_val = st.sidebar.selectbox("Category", options=["Any", "Technical Failure", "Non-Technical / CRM (Non-ATA)", "ATA Specific"], key=f"type_sel_{i}", label_visibility="collapsed")
-    
-    ata_val = st.sidebar.number_input("ATA Chapter", min_value=11, max_value=80, key=f"ata_sel_{i}") if type_val == "ATA Specific" else None
-    comp_val = st.sidebar.selectbox("Target Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key=f"comp_sel_{i}", label_visibility="collapsed")
-    is_mandatory = st.sidebar.checkbox("Pin Exercise", value=slot_data.get("mandatory", False), key=f"mand_sel_{i}")
-    
-    slot_configurations.append({"slot": i + 1, "phase": int(p_val), "dod": int(d_val), "role": role_val, "type": type_val, "ata": ata_val, "competency": comp_val, "mandatory": is_mandatory})
-
-st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
-uploaded_scen = st.sidebar.file_uploader("Upload Scenarios.csv", type=["csv"])
-uploaded_comp = st.sidebar.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags.")
-
-# Document References Footer in Sidebar
-st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
-st.sidebar.markdown("<div class='sidebar-header'>📚 DOCUMENT REFERENCES</div>", unsafe_allow_html=True)
-for tag, title in DOCUMENT_REFERENCES.items():
-    st.sidebar.markdown(f"<div style='font-size: 11px; color: var(--text-color); opacity: 0.75; margin-bottom: 2px;'><b>[{tag}]</b> {title}</div>", unsafe_allow_html=True)
-
-st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v4.6 2026</div>", unsafe_allow_html=True)
