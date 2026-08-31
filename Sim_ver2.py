@@ -207,8 +207,9 @@ PROGRAM_SYLLABUS_EXERCISES = {
                 "obs": [
                     {"text": "OB FPM 3.1: Immediate rudder input to counter asymmetric yaw; roll kept within ±5°; SRS pitch target (~12.5°) achieved.", "ref": "FCTM_ABN", "comp": "FPM"},
                     {"text": "OB FPM 3.2: PM actively calls out FMA changes and monitors V2 trend.", "ref": "FCOM_PRO", "comp": "FPM"},
-                    {"text": "OB FPM 3.3: Smoothly references Beta Target (blue trapezoid on PFD) to optimize sideslip.", "ref": "FCTM_ABN", "comp": "FPM"},
-                    {"text": "OB SAW 6.2: Maintains awareness of Engine-Out SID (EO SID) and terrain clearance profile.", "ref": "OM_B", "comp": "SAW"}
+                    {"text": "OB FPM 3.3: Smoothly references Beta Target (blue trapezoid on PFD) to optimize sideslip without chasing it abruptly.", "ref": "FCTM_ABN", "comp": "FPM"},
+                    {"text": "OB FPM 3.4: Bank angle kept within 15° while below manoeuvring speed (F/S/G-DOT), consistent with protection limits in this configuration.", "ref": "FCTM_ABN", "comp": "FPM"},
+                    {"text": "OB SAW 6.2: Maintains awareness of Engine-Out SID (EO SID) and terrain clearance profile; recognizes whether the aircraft is before or after the SID/EOSID divergence point.", "ref": "OM_B", "comp": "SAW"}
                 ]
             },
             {
@@ -216,18 +217,18 @@ PROGRAM_SYLLABUS_EXERCISES = {
                 "pta": "Manage thrust levers symmetrically before calling memory items; execute ECAM actions systematically above 400 ft AGL.",
                 "obs": [
                     {"text": "OB APK 1.4: Strict ECAM discipline loop. PM reads line, touches switch, asks confirmation before actuation.", "ref": "QRH", "comp": "APK"},
-                    {"text": "OB APK 1.2: Adheres to approved procedures; allows ECAM to guide chronologically without premature fire pushbutton actuation.", "ref": "FCOM_PRO", "comp": "APK"},
-                    {"text": "OB COM 2.4: Clear closed-loop verification callouts before moving primary switches.", "ref": "EASA_EBT", "comp": "COM"},
-                    {"text": "OB WLM 8.1: PF isolates attention strictly to primary flight parameters while delegating ECAM management to PM.", "ref": "OM_A", "comp": "WLM"}
+                    {"text": "OB APK 1.2: Adheres to approved procedures; allows ECAM to guide chronologically without premature fire pushbutton actuation, and confirms with PF before MASTER SWITCH OFF / fire P/B actions.", "ref": "FCOM_PRO", "comp": "APK"},
+                    {"text": "OB COM 2.4: Clear closed-loop verification callouts before moving primary switches; PM announces ENG FAILURE/FIRE and cancels the aural warning promptly.", "ref": "EASA_EBT", "comp": "COM"},
+                    {"text": "OB WLM 8.1: PF isolates attention strictly to primary flight parameters while delegating ECAM management to PM; TOGA use, if selected, is monitored against its time limit (10 min, 5 min FAA).", "ref": "OM_A", "comp": "WLM"}
                 ]
             },
             {
                 "phase_name": "Phase 3: Strategic Assessment & Diversion Planning",
                 "pta": "Evaluate diversion options utilizing structured risk mitigation (FORDEC/DODAR), secure aircraft systems, and coordinate with ATC/Cabin.",
                 "obs": [
-                    {"text": "OB PSD 5.1: Identifies secondary threats caused by failure (reduced electrical/hydraulic redundancies).", "ref": "ICAO_9995", "comp": "PSD"},
-                    {"text": "OB PSD 5.3: Implements formal decision matrix (FORDEC/DODAR): weighs returning vs. diverting.", "ref": "OM_A", "comp": "PSD"},
-                    {"text": "OB SAW 6.1: Actively monitors remaining fuel flow and single-engine performance calculations.", "ref": "EASA_EBT", "comp": "SAW"},
+                    {"text": "OB PSD 5.1: Identifies secondary threats caused by failure (reduced electrical/hydraulic redundancies) and considers possible structural damage cues (vibration, oil quantity/pressure, N1/N2 near zero).", "ref": "ICAO_9995", "comp": "PSD"},
+                    {"text": "OB PSD 5.3: Implements formal decision matrix (FORDEC/DODAR): weighs returning vs. diverting, and whether a relight is appropriate once configured and stable.", "ref": "OM_A", "comp": "PSD"},
+                    {"text": "OB SAW 6.1: Actively monitors remaining fuel flow, single-engine performance calculations, and minimum safe altitude (MSA).", "ref": "EASA_EBT", "comp": "SAW"},
                     {"text": "OB COM 2.5: Delivers structured MAYDAY declaration to ATC and NITS briefing to cabin crew.", "ref": "OM_A", "comp": "COM"}
                 ]
             },
@@ -244,7 +245,7 @@ PROGRAM_SYLLABUS_EXERCISES = {
     },
     "EX-02_ENG_FIRE": {
         "title": "Exercise 02: Engine Fire & Severe Mechanical Damage in Flight",
-        "keywords": ["FIRE", "DAMAGE", "ENGINE FIRE"],
+        "keywords": ["ENGINE FIRE", "ENG FIRE", "TAILPIPE FIRE", "MECHANICAL DAMAGE", "SEVERE DAMAGE"],
         "phase": 3,
         "stressor": "Engine 2 Fire warning during climb phase with high vibration indications.",
         "cbta_focus": ["APK", "COM", "WLM", "PSD"],
@@ -278,41 +279,43 @@ PROGRAM_SYLLABUS_EXERCISES = {
     },
     "EX-03_DUAL_GEN": {
         "title": "Exercise 03: Dual Generator Failure / Emergency Electrical Configuration",
-        "keywords": ["DUAL GEN", "ELECTRICAL", "EMER ELEC", "RAT"],
+        "keywords": ["DUAL GEN", "ELECTRICAL", "EMER ELEC", "RAT EXTENSION", "RAT EXTENDED", "EMERGENCY GENERATOR"],
         "phase": 3,
-        "stressor": "Total loss of main AC buses (Generators 1 & 2 failed), triggering automatic RAT extension and emergency bus reversion.",
+        "stressor": "Total loss of main AC buses (Generators 1 & 2 failed), triggering automatic RAT extension and CSM-G/battery-only bus reversion.",
         "cbta_focus": ["APK", "SAW", "FPA", "COM"],
         "sequence": [
             {
                 "phase_name": "Phase 1: Emergency Reversion & RAT Deployment Verification",
-                "pta": "Verify RAT extension and emergency generator coupling while maintaining flight parameters on standby instruments.",
+                "pta": "Verify RAT extension and CSM-G coupling while maintaining flight parameters through the brief battery-only transition.",
                 "obs": [
-                    {"text": "OB SAW 6.1: Rapidly recognizes loss of primary display units and confirms RAT deployment.", "ref": "FCOM_PRO", "comp": "SAW"},
-                    {"text": "OB FPM 3.1: Stabilizes pitch and roll manually during display power transition.", "ref": "FCTM_ABN", "comp": "FPM"},
-                    {"text": "OB APK 1.2: Executes Emergency Electrical Configuration procedures without delay.", "ref": "QRH", "comp": "APK"}
+                    {"text": "OB SAW 6.1: Rapidly recognizes loss of primary display units, confirms RAT deployment, and anticipates the ~5 second battery-only period before CSM-G comes on line.", "ref": "FCOM_PRO", "comp": "SAW"},
+                    {"text": "OB FPM 3.1: Stabilizes pitch and roll manually during the display power transition.", "ref": "FCTM_ABN", "comp": "FPM"},
+                    {"text": "OB APK 1.2: Executes Emergency Electrical Configuration procedures without delay and maintains speed at or above RAT MINI (140 kt) to prevent RAT stall.", "ref": "QRH", "comp": "APK"}
                 ]
             },
             {
                 "phase_name": "Phase 2: Communication & Systems Management",
-                "pta": "Restore communication using RMP 1 on VHF 1 and manage load shedding.",
+                "pta": "Restore communication using RMP 1 on VHF 1, manage the reduced system set available on CSM-G power, and plan for a fully manual, raw-data approach.",
                 "obs": [
-                    {"text": "OB COM 2.1: Establishes VHF 1 emergency communications using audio control panel 1.", "ref": "OM_A", "comp": "COM"},
-                    {"text": "OB WLM 8.1: Systematically delegates QRH management while maintaining raw-data navigation tracking.", "ref": "ICAO_9995", "comp": "WLM"}
+                    {"text": "OB COM 2.1: Establishes VHF 1 emergency communications using audio control panel 1; briefs that RA-based auto callouts are lost, so PM will call heights manually.", "ref": "OM_A", "comp": "COM"},
+                    {"text": "OB WLM 8.1: Systematically delegates QRH management while maintaining raw-data navigation tracking (navaids tuned on RMP1, ND1/FMGC1 loss anticipated depending on RAT type/gear position).", "ref": "ICAO_9995", "comp": "WLM"},
+                    {"text": "OB APK 1.3: Recognizes that all approaches must be flown manually with raw data — no AP, FD, or ATHR available in this configuration.", "ref": "FCOM_PRO", "comp": "APK"}
                 ]
             },
             {
-                "phase_name": "Phase 3: Emergency Descent & Landing Setup",
-                "pta": "Plan visual or ILS CAT I approach with gravity gear extension procedures.",
+                "phase_name": "Phase 3: Approach & Landing Setup",
+                "pta": "Plan a manual raw-data approach appropriate to the reduced system set, anticipating the flight control law change and loss of normal braking/NWS/reversers.",
                 "obs": [
-                    {"text": "OB APK 1.4: Strict execution of Gravity Gear Extension memory items at specified speed limits.", "ref": "QRH", "comp": "APK"},
-                    {"text": "OB PSD 5.3: Evaluates weather limits for non-availability of CAT II/III capability.", "ref": "OM_B", "comp": "PSD"}
+                    {"text": "OB FPA 4.2: Extracts characteristic (VLS/approach) speeds from QRH rather than relying on FAC-computed PFD speeds where affected, and briefs the ALTN-to-DIRECT law transition on gear extension.", "ref": "QRH", "comp": "FPA"},
+                    {"text": "OB PSD 5.3: Anticipates loss of normal/alternate braking, NWS, and reversers (BSCU lost); plans a longer landing roll and runway exit strategy accordingly.", "ref": "FCOM_PRO", "comp": "PSD"},
+                    {"text": "OB SAW 6.4: Cross-checks whether the operating RAT variant keeps CSM-G on line with gear down (\"new\" RAT) or disconnects it (\"old\" RAT), since this changes available systems on approach.", "ref": "OM_B", "comp": "SAW"}
                 ]
             }
         ]
     },
     "EX-04_SE_ILS": {
         "title": "Exercise 04: Single Engine ILS Precision Approach & Missed Approach Profile",
-        "keywords": ["ILS", "APPROACH", "SINGLE ENGINE ILS", "MISSED APPROACH"],
+        "keywords": ["SINGLE ENGINE ILS", "SE ILS", "ENGINE OUT ILS", "ENG OUT ILS"],
         "phase": 6,
         "stressor": "Single-engine precision ILS approach in low visibility conditions (CAT I) with crosswind and option for go-around.",
         "cbta_focus": ["FPM", "FPA", "LTW", "SAW"],
@@ -397,6 +400,161 @@ PROGRAM_SYLLABUS_EXERCISES = {
                 "obs": [
                     {"text": "OB COM 2.5: Transmits MAYDAY call specifying emergency descent and target level.", "ref": "OM_A", "comp": "COM"},
                     {"text": "OB SAW 6.2: Verifies MORA/MSA on navigation display to prevent CFIT during descent.", "ref": "OM_B", "comp": "SAW"}
+                ]
+            }
+        ]
+    },
+    "EX-07_UNRELIABLE_SPEED": {
+        "title": "Exercise 07: Unreliable Speed / Altitude Indication",
+        "keywords": ["UNRELIABLE", "ADR 1+3", "ADR 2+3", "AIR DATA"],
+        "phase": 4,
+        "stressor": "Simultaneous pitot/static disagreement (e.g. dual ADR fault) producing unreliable IAS/altitude with no ECAM warning if all sources are affected equally.",
+        "cbta_focus": ["SAW", "FPM", "PSD", "COM"],
+        "sequence": [
+            {
+                "phase_name": "Phase 1: Recognition (Startle Management)",
+                "pta": "Recognize the unreliable-indication pattern from correlation cues rather than a single clear warning, and manage the startle response.",
+                "obs": [
+                    {"text": "OB SAW 6.1: Identifies abnormal correlation between IAS, pitch, thrust and V/S (e.g. undue stall/overspeed warnings, jerky altitude) rather than waiting for a discrete ECAM alert.", "ref": "FCOM_PRO", "comp": "SAW"},
+                    {"text": "OB PSD 5.1: Manages startle/surprise without abrupt control inputs; avoids fixating on a single suspect indication before cross-checking others.", "ref": "ICAO_9995", "comp": "PSD"}
+                ]
+            },
+            {
+                "phase_name": "Phase 2: Safety Recovery",
+                "pta": "Apply the memorized safety recovery: disconnect automation and set the altitude-banded pitch/thrust reference, without hunting on unreliable speed data.",
+                "obs": [
+                    {"text": "OB APK 1.4: Disconnects AP, A/THR and FD without delay once the safe conduct of the flight is judged to be impacted.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB FPM 3.1: Sets the correct altitude-banded pitch/thrust reference: 15°/TOGA below thrust reduction altitude, 10°/CLB above thrust reduction altitude and below FL100, or 5°/CLB above FL100 — not a single fixed value regardless of phase.", "ref": "QRH", "comp": "FPM"},
+                    {"text": "OB APK 1.2: Maintains current configuration if below CONF FULL, or selects and maintains CONF 3 if in CONF FULL; checks speedbrakes retracted and gear up as memorized.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB SAW 6.3: Levels off for troubleshooting once at or above MSA/circuit altitude, rather than continuing to climb or descend on unreliable data.", "ref": "QRH", "comp": "SAW"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Diagnosis & Continued Safe Flight",
+                "pta": "Confirm which parameters remain trustworthy, extract backup pitch/thrust tables, and plan the approach using only validated data.",
+                "obs": [
+                    {"text": "OB PSD 5.3: Determines whether altitude, speed, or both are affected, and selects the correct backup references accordingly (GPS ALT+GS for altitude; GPS GS/BIRD/other-aircraft-reported wind for speed).", "ref": "QRH", "comp": "PSD"},
+                    {"text": "OB COM 2.5: Declares the emergency to ATC (squawk as briefed) and requests any assistance needed (radar-verified altitude, other traffic wind reports).", "ref": "OM_A", "comp": "COM"},
+                    {"text": "OB APK 1.1: References the QRH pitch/thrust table for the current configuration and phase rather than reverting to normal PFD guidance prematurely.", "ref": "QRH", "comp": "APK"}
+                ]
+            }
+        ]
+    },
+    "EX-08_DOUBLE_HYD": {
+        "title": "Exercise 08: Double Hydraulic Failure (G+B / G+Y)",
+        "keywords": ["(G/Y)", "(G/B)", "(B/Y)", "DOUBLE HYD", "DUAL HYD"],
+        "phase": 6,
+        "stressor": "Loss of two of three hydraulic systems, causing autopilot loss, degraded flight control law, and an abnormal landing configuration.",
+        "cbta_focus": ["FPM", "APK", "PSD", "LTW"],
+        "sequence": [
+            {
+                "phase_name": "Phase 1: Emergency Declaration & Task Allocation",
+                "pta": "Declare the emergency (LAND ASAP) and confirm PF/PNF task allocation before starting the extended ECAM/QRH sequence.",
+                "obs": [
+                    {"text": "OB LTW 7.2: Confirms who will fly for the remainder of the approach and landing; a task handover between crew members is made explicit if it occurs.", "ref": "FCTM_ABN", "comp": "LTW"},
+                    {"text": "OB COM 2.5: Declares LAND ASAP / emergency status to ATC promptly given the loss of two hydraulic systems.", "ref": "OM_A", "comp": "COM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 2: Configuration & Gravity Extension",
+                "pta": "Work the ECAM, QRH abnormal/performance tables, slats/flaps jammed checklist, and gravity gear extension checklist in the correct sequence, early enough to be stable before final descent.",
+                "obs": [
+                    {"text": "OB APK 1.4: Completes the SLATS/FLAPS JAMMED checklist to establish landing configuration early (downwind or long final), using selected speed throughout.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB APK 1.2: Performs gravity gear extension from the paper checklist, with gear down and stabilized before commencing the final descent.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB FPM 3.2: Anticipates degraded roll control (spoilers lost) and, if pitch trim is affected (G+Y loss), extends the landing gear at VAPP at the earliest point to retain elevator-trim integration.", "ref": "FCTM_ABN", "comp": "FPM"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Approach, Landing & Rollout",
+                "pta": "Fly a stabilized approach at the increased reference speed, brief the go-around from the checklist, and manage rollout with reduced braking/no NWS.",
+                "obs": [
+                    {"text": "OB PSD 5.4: Calculates the correct VREF increment and landing distance from QRH using the minimum configuration / maximum increment rule when in doubt.", "ref": "QRH", "comp": "PSD"},
+                    {"text": "OB LTW 7.1: PM briefs the PF on the go-around procedure from the same checklist before the approach begins, given the abnormal configuration.", "ref": "OM_A", "comp": "LTW"},
+                    {"text": "OB FPM 3.3: Maintains a well-stabilized approach with gear down early, avoiding hard pitch inputs that could trigger spurious stall warnings; plans a higher-speed runway exit given loss of normal/alternate braking and NWS.", "ref": "FCTM_ABN", "comp": "FPM"}
+                ]
+            }
+        ]
+    },
+    "EX-09_ABNORMAL_SLATS_FLAPS": {
+        "title": "Exercise 09: Abnormal Slats/Flaps Configuration",
+        "keywords": ["SLATS SYS 1+2", "FLAPS LOCKED", "SLATS LOCKED", "F/CTL SLATS", "F/CTL FLAPS"],
+        "phase": 6,
+        "stressor": "Dual SFCC channel fault or WTB-jammed slats/flaps, producing a frozen high-lift configuration and modified approach references.",
+        "cbta_focus": ["APK", "FPA", "SAW"],
+        "sequence": [
+            {
+                "phase_name": "Phase 1: Fault Type Recognition", "pta": "Distinguish between a dual SFCC channel fault (protections/AP/ATHR lost) and a WTB-jammed condition (normal law, AP/ATHR retained to 500 ft) since the consequences differ materially.",
+                "obs": [
+                    {"text": "OB SAW 6.2: Correctly identifies which case applies (F/CTL SLATS FAULT vs F/CTL FLAPS FAULT vs S/F LOCKED) from the ECAM title and ND/PFD symptoms rather than assuming the more familiar case.", "ref": "FCOM_PRO", "comp": "SAW"}
+                ]
+            },
+            {
+                "phase_name": "Phase 2: Configuration & Speed Management", "pta": "Engage selected speed for the achieved configuration promptly and avoid exceeding VFE for the current slat/flap position.",
+                "obs": [
+                    {"text": "OB APK 1.2: Engages selected speed for the landing configuration as soon as the malfunction is confirmed, per the applicable checklist.", "ref": "QRH", "comp": "APK"},
+                    {"text": "OB APK 1.3: Respects VFE-next limits for the current configuration; avoids selecting FLAPS FULL where the checklist prohibits it (dual flap channel fault).", "ref": "FCOM_PRO", "comp": "APK"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Approach & Landing Data", "pta": "Extract the correct VAPP/ΔVREF and landing distance data from QRH for the achieved configuration, briefing any abnormal pitch attitude effects.",
+                "obs": [
+                    {"text": "OB FPA 4.3: Determines VAPP/ΔVREF and landing distance from QRH tables for the confirmed slat/flap position rather than assuming a standard-configuration value.", "ref": "QRH", "comp": "FPA"},
+                    {"text": "OB PSD 5.2: Where AP/ATHR remain available (WTB-jammed case), plans to disconnect AP by 500 ft AGL as required by the procedure.", "ref": "QRH", "comp": "PSD"}
+                ]
+            }
+        ]
+    },
+    "EX-10_ZFW_ERROR": {
+        "title": "Exercise 10: ZFW / Loadsheet Entry Error",
+        "keywords": ["ZFW", "LOADSHEET ERROR", "LOAD SHEET"],
+        "phase": 1,
+        "stressor": "An erroneous ZFW/FOB entry into the FMGC produces a CHECK GW discrepancy against the FAC-computed gross weight, with knock-on effects on characteristic speeds and SRS guidance.",
+        "cbta_focus": ["APK", "SAW", "PSD"],
+        "sequence": [
+            {
+                "phase_name": "Phase 1: Cross-Check Before Departure", "pta": "Cross-check the FMGC-entered ZFW/FOB against the load sheet before accepting performance data.",
+                "obs": [
+                    {"text": "OB APK 1.1: Cross-checks INIT B page ZFW/ZFWCG and FOB entries against the load sheet before takeoff performance is computed.", "ref": "FCOM_PRO", "comp": "APK"}
+                ]
+            },
+            {
+                "phase_name": "Phase 2: CHECK GW Recognition", "pta": "Recognize a CHECK GW amber warning as a discrepancy between FMGC and FAC-computed gross weight and resolve it methodically rather than dismissing it.",
+                "obs": [
+                    {"text": "OB SAW 6.1: Notices the CHECK GW message and does not dismiss it without cross-checking current GW against the load sheet and ECAM fuel-used values.", "ref": "QRH", "comp": "SAW"},
+                    {"text": "OB PSD 5.1: Correctly reasons through which value is likely wrong (FMGC entry vs AOA-derived FAC value) using the comparison procedure, rather than guessing.", "ref": "ICAO_9995", "comp": "PSD"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Corrective Action", "pta": "Apply the correct fix — amend the FUEL PRED page entry, or use QRH-derived characteristic speeds if the load sheet GW is confirmed correct.",
+                "obs": [
+                    {"text": "OB APK 1.4: Inserts the corrected GW value on the FUEL PRED page once an obvious entry error is confirmed, or extracts characteristic speeds from QRH chapter 4 if PFD speeds remain suspect.", "ref": "QRH", "comp": "APK"}
+                ]
+            }
+        ]
+    },
+    "EX-11_DOUBLE_RA": {
+        "title": "Exercise 11: Double Radio Altimeter Failure",
+        "keywords": ["RA 1+2", "DOUBLE RA", "RADIO ALTIMETER", "DUAL RA"],
+        "phase": 6,
+        "stressor": "Loss of both radio altimeters removes R/A-dependent flight control law transitions, autoland modes, GPWS/EGPWS, and auto callouts.",
+        "cbta_focus": ["SAW", "APK", "COM"],
+        "sequence": [
+            {
+                "phase_name": "Phase 1: System Impact Assessment", "pta": "Recognize the full scope of R/A-dependent systems affected before briefing the approach.",
+                "obs": [
+                    {"text": "OB SAW 6.3: Identifies that flare/ground law transitions now depend on LGCIU (gear-down/weight-on-wheels) rather than R/A height, and that GPWS/EGPWS and R/A auto callouts are lost.", "ref": "FCOM_PRO", "comp": "SAW"}
+                ]
+            },
+            {
+                "phase_name": "Phase 2: Approach Mode Planning", "pta": "Plan a non-autoland, non-managed-height-callout approach; brief that LAND/FLARE/ROLLOUT modes will not engage.", 
+                "obs": [
+                    {"text": "OB APK 1.2: Selects LOC/APPR modes manually via pushbutton where required, aware that autoland and DH auto-callouts are unavailable.", "ref": "FCOM_PRO", "comp": "APK"}
+                ]
+            },
+            {
+                "phase_name": "Phase 3: Manual Callouts & Landing", "pta": "Compensate for lost automation with disciplined manual callouts through flare and landing.",
+                "obs": [
+                    {"text": "OB COM 2.3: PM calls height/rate manually in the absence of R/A auto callouts, and calls USE MANUAL PITCH TRIM awareness as the aircraft transitions to direct law with gear down.", "ref": "OM_A", "comp": "COM"}
                 ]
             }
         ]
@@ -568,19 +726,89 @@ ATA_FAMILY_GENERIC = {
 }
 
 
+SCENARIO_OB_LIBRARY = {}  # populated after sidebar upload — normalized event name -> {"pta":, "sequence":, "cbta_focus":}
+
+
+@st.cache_data(show_spinner="Loading scenario-specific Observable Behaviours...")
+def load_scenario_obs_library(source):
+    """Load a Scenario_Observable_Behaviours.xlsx (built from the template)
+    into a lookup usable by get_exercise_for_event. Rows with no OB text
+    filled in are skipped entirely, so an event with an empty row still
+    correctly falls through to the ATA-family/generic fallback rather than
+    resolving to an empty sequence."""
+    try:
+        try:
+            df_obs = pd.read_excel(source, sheet_name="Scenario OBs")
+        except ValueError:
+            # Uploaded file doesn't use the template's sheet name — fall
+            # back to whichever sheet pandas reads by default.
+            df_obs = pd.read_excel(source)
+        df_obs.columns = [str(c).strip() for c in df_obs.columns]
+        library = {}
+        for _, row in df_obs.iterrows():
+            event = row.get("EVENT")
+            if pd.isna(event) or str(event).strip().upper().startswith("EXAMPLE"):
+                continue
+            obs = []
+            for i in (1, 2, 3, 4):
+                comp = row.get(f"OB{i}_COMPETENCY")
+                text = row.get(f"OB{i}_TEXT")
+                ref = row.get(f"OB{i}_REF")
+                if pd.notna(comp) and pd.notna(text) and str(comp).strip() and str(text).strip():
+                    comp_clean = str(comp).strip().upper()
+                    if comp_clean in COMPETENCY_KEYS:
+                        obs.append({
+                            "text": f"OB {comp_clean}: {str(text).strip()}",
+                            "ref": str(ref).strip() if pd.notna(ref) and str(ref).strip() else "OM_B",
+                            "comp": comp_clean,
+                        })
+            if not obs:
+                continue  # nothing filled in for this event yet — leave it to the fallback chain
+            pta = str(row.get("PTA")).strip() if pd.notna(row.get("PTA")) else ""
+            norm = _normalize_event_name(event)
+            library[norm] = {
+                "pta": pta,
+                "sequence": [{"phase_name": "Scenario-Specific Observable Behaviours (Training Dept. Authored)", "pta": pta, "obs": obs}],
+                "cbta_focus": sorted({o["comp"] for o in obs}),
+            }
+        return library, None
+    except Exception as e:
+        return {}, str(e)
+
+
 def get_exercise_for_event(event_title, ata=None):
-    """Resolve the OB sequence to display/grade for a given event: (1) a
-    dedicated syllabus exercise if its keywords match, (2) otherwise an
-    ATA-chapter-family generic set if the event's ATA chapter maps to one,
-    (3) otherwise the fully generic fallback. Centralizing this here
-    replaces two separate copies of the same keyword-matching loop that
-    previously always fell back to EX-01_EFATO regardless of ATA chapter."""
-    ev_upper = str(event_title).upper()
+    """Resolve the OB sequence to display/grade for a given event, in
+    priority order:
+      1. A dedicated, hand-authored syllabus exercise if its keywords match
+         (major maneuvers like EFATO, engine fire, etc.)
+      2. A scenario-specific entry from an uploaded
+         Scenario_Observable_Behaviours.xlsx, if the training department
+         has authored one for this exact event (fuzzy-matched by name).
+      3. An ATA-chapter-family generic set if the event's ATA chapter maps
+         to one.
+      4. The fully generic fallback.
+    Without tier 2, every event sharing an ATA chapter showed IDENTICAL
+    OB text regardless of which specific failure it actually was — this
+    is the fix for that: it lets the training team author real,
+    scenario-specific content incrementally via a spreadsheet, without
+    needing a code change per scenario."""
+    ev_upper = str(event_title).replace("\xa0", " ").upper()
     for ex_key, ex_data in PROGRAM_SYLLABUS_EXERCISES.items():
         if ex_key == "EX-00_GENERIC":
             continue
         if any(kw in ev_upper for kw in ex_data["keywords"]):
             return ex_data["title"], ex_data["sequence"], ex_data["cbta_focus"]
+
+    if SCENARIO_OB_LIBRARY:
+        norm_ev = _normalize_event_name(event_title)
+        entry = SCENARIO_OB_LIBRARY.get(norm_ev)
+        if entry is None:
+            close = difflib.get_close_matches(norm_ev, list(SCENARIO_OB_LIBRARY.keys()), n=1, cutoff=0.72)
+            if close:
+                entry = SCENARIO_OB_LIBRARY[close[0]]
+        if entry:
+            return f"Scenario-Specific: {event_title}", entry["sequence"], entry["cbta_focus"]
+
     if ata is not None:
         try:
             family = ATA_TO_FAMILY.get(int(ata))
@@ -621,13 +849,196 @@ COMPETENCY_KEYS = {
     "WLM": "Workload Management",
 }
 
+# ==========================================
+# KM MALTA AIRLINES OFFICIAL GRADING SYSTEM
+# Sourced directly from Operations Manual Part D, §3.1.1.1 "Grading
+# System" (Issue 03, Rev 00/02) — this replaces an earlier, generic
+# EASA-style approximation with the company's actual adopted scale,
+# labels, and per-competency Key Performance Indicators. This is the
+# single most authoritative source available for this tool: it's the
+# document instructors are already required to grade against.
+# ==========================================
+GRADE_LABELS = {5: "Excellent", 4: "Very Good", 3: "Good", 2: "Minimum Acceptable Level", 1: "Unsatisfactory"}
+
 GRADE_DESCRIPTORS = {
-    5: "Competent – Exemplary. Performance consistently exceeded the standard; no errors, and threats/errors were anticipated and managed proactively.",
-    4: "Competent – Above standard. Effective performance with only minor, self-identified and self-corrected deviations; no impact on safety margins.",
-    3: "Competent – Standard (expected level). Effective, safe performance consistent with line operations. This is the target level for a qualified pilot, not a bare minimum.",
-    2: "Competent – Minimum level, with deficiencies. The competency was demonstrated but required instructor prompting or coaching; follow-up in a subsequent session is recommended.",
-    1: "Not competent. The minimum acceptable standard was not met; instructor intervention was required to preserve safety margins. Mandatory remediation is required.",
+    5: "The pilot always demonstrates all the required behavioural indicators in an effective and efficient manner. Safety is significantly enhanced.",
+    4: "The pilot demonstrated effective knowledge, skill and attitudes by demonstrating all the required behavioural markers in a regular manner. Safety is always enhanced.",
+    3: "The pilot demonstrated adequate knowledge, skill and attitude by demonstrating all the required behavioural markers in a frequent manner, resulting in a safe operation.",
+    2: "The pilot demonstrated knowledge, skill and attitude at a minimum acceptable level by only occasionally demonstrating some of the behavioural markers when required, but never resulting in an unsafe situation.",
+    1: "The pilot did not demonstrate the necessary knowledge, skill and attitude in any of the behavioural indicators when required, which resulted in an unsafe situation.",
 }
+
+# Official Key Performance Indicators per competency (OM-D §3.1.1.1).
+# These are the actual behavioural markers instructors observe against —
+# far more specific than the one-line competency names above.
+COMPETENCY_KPIS = {
+    "APK": [
+        "Follows SOPs unless a higher degree of safety dictates otherwise",
+        "Identifies and applies all operating instructions in a timely manner",
+        "Correctly uses aircraft systems, controls and instruments",
+        "Safely manages the aircraft to achieve best value for the operation, including fuel, the environment, passenger comfort and punctuality",
+        "Identifies the source of operating instructions",
+    ],
+    "COM": [
+        "Knows what, how, where, when, how much and with whom he or she needs to communicate",
+        "Ensures the recipient is ready and able to receive the information",
+        "Conveys messages and information clearly, accurately, timely and adequately",
+        "Confirms that the recipient correctly understands important information",
+        "Listens actively, patiently and demonstrates understanding when receiving information",
+        "Asks relevant and effective questions and offers suggestions",
+        "Uses appropriate body language, eye contact and tone, and correctly interprets non-verbal communication of others",
+        "Is receptive to other people's views and is willing to compromise",
+    ],
+    "FPA": [
+        "Controls the aircraft using automation with accuracy and smoothness as appropriate to the situation",
+        "Detects deviations from the desired aircraft trajectory and takes appropriate action",
+        "Contains the aircraft within the normal flight envelope",
+        "Manages the flight path to achieve optimum operational performance",
+        "Maintains the desired flight path during flight using automation whilst managing other tasks and distractions",
+        "Selects appropriate level and mode of automation in a timely manner considering phase of flight and workload",
+        "Effectively monitors automation, including engagement and automatic mode transitions",
+    ],
+    "FPM": [
+        "Controls the aircraft manually with accuracy and smoothness as appropriate to the situation",
+        "Detects deviations from the desired aircraft trajectory and takes appropriate action",
+        "Contains the aircraft within the normal flight envelope",
+        "Controls the aircraft safely using only the relationship between aircraft attitude, speed and thrust",
+        "Manages the flight path to achieve optimum operational performance",
+        "Maintains the desired flight path during manual flight whilst managing other tasks and distractions",
+        "Selects appropriate level and mode of flight guidance systems in a timely manner considering phase of flight and workload",
+        "Effectively monitors flight guidance systems, including engagement and automatic mode transitions",
+    ],
+    "KNO": [
+        "Demonstrates practical and applicable knowledge of limitations and systems and their interaction",
+        "Demonstrates required knowledge of published operating instructions",
+        "Demonstrates knowledge of the physical environment, the air traffic environment including routing, weather, airports and operational infrastructure",
+        "Demonstrates appropriate knowledge of applicable legislation",
+        "Knows where to source required information",
+        "Demonstrates a positive interest in acquiring knowledge",
+        "Is able to apply knowledge effectively",
+    ],
+    "LTW": [
+        "Understands and agrees with the crew's roles and objectives",
+        "Is approachable, enthusiastic, motivating and considerate of others",
+        "Uses initiative, gives direction and takes responsibility when required",
+        "Anticipates other crew members' needs and carries out instructions when directed",
+        "Is open and honest about thoughts, concerns and intentions",
+        "Gives and receives both criticism and praise well and admits mistakes",
+        "Confidently says and does what is important for safety",
+        "Demonstrates empathy, respect and tolerance for other people",
+        "Involves others in planning and allocates activities fairly and appropriately to abilities",
+    ],
+    "PSD": [
+        "Identifies and verifies why things have gone wrong and does not jump to conclusions or makes uninformed assumptions",
+        "Seeks accurate and adequate information from appropriate sources",
+        "Perseveres in working through a problem without reducing safety",
+        "Uses appropriate agreed and timely decision-making processes",
+        "Applies essential and desirable criteria and prioritises",
+        "Considers as many options as practicable",
+        "Makes decisions when needed, reviews and changes them if required",
+        "Considers risks but does not take unnecessary risks",
+        "Improvises appropriately when faced with unforeseen circumstances to achieve the safest outcome",
+    ],
+    "SAW": [
+        "Is aware of the state of the aircraft and its systems",
+        "Is aware of where the aircraft is and its environment",
+        "Keeps track of time and fuel",
+        "Is aware of the condition of people involved in the operation including passengers",
+        "Develops \"what if\" scenarios and plans for contingencies",
+        "Identifies threats to the safety of the aircraft and people, and takes appropriate action",
+    ],
+    "WLM": [
+        "Is calm, relaxed, careful and not impulsive",
+        "Plans, prepares, prioritises and schedules tasks effectively",
+        "Manages time efficiently when carrying out tasks",
+        "Offers and accepts assistance, delegates when necessary and asks for help early",
+        "Reviews, monitors and cross-checks actions conscientiously",
+        "Ensures tasks are completed",
+        "Manages interruptions, distractions, variations and failures effectively",
+    ],
+}
+
+# Official per-competency, per-grade descriptor text (OM-D §3.1.1.1) —
+# what instructors actually grade against, rather than the generic
+# 1-5 scale text applied uniformly across every competency.
+COMPETENCY_GRADE_TEXT = {
+    "APK": {
+        5: "The pilot applied procedures very effectively, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot applied procedures effectively, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot applied procedures adequately, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot applied procedures at the minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot did not apply procedures correctly, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+    "COM": {
+        5: "The pilot communicated very effectively, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot communicated effectively, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot communicated adequately, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot communicated at the minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot did not communicate effectively, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+    "FPA": {
+        5: "The pilot managed the automation very effectively, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot managed the automation effectively, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot managed the automation adequately, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot managed the automation at the minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot did not manage the automation effectively, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+    "FPM": {
+        5: "The pilot controlled the aircraft very effectively, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot controlled the aircraft effectively, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot controlled the aircraft adequately, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot controlled the aircraft at the minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot did not control the aircraft effectively, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+    "KNO": {
+        5: "The pilot showed exemplary knowledge, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot showed effective knowledge, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot showed adequate knowledge, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot showed knowledge to a minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot did not show adequate knowledge, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+    "LTW": {
+        5: "The pilot led and worked as a team member very effectively, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot led and worked as a team member effectively, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot led and worked as a team member adequately, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot led and worked as a team member at the minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot did not lead or work as a team member, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+    "PSD": {
+        5: "The pilot solved problems and made decisions very effectively, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot solved problems and made decisions effectively, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot solved problems and made decisions adequately, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot solved problems and made decisions at the minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot did not solve problems and make decisions effectively, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+    "SAW": {
+        5: "The pilot's situation awareness was excellent, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot's situation awareness was very good, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot's situation awareness was adequate, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot's situation awareness was at the minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot's situation awareness was not adequate, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+    "WLM": {
+        5: "The pilot managed workload very effectively, by always demonstrating all of the performance indicators to a high standard when required, which significantly enhanced safety, effectiveness and efficiency.",
+        4: "The pilot managed workload effectively, by regularly demonstrating all of the performance indicators when required, which enhanced safety.",
+        3: "The pilot managed workload very adequately, by regularly demonstrating most of the performance indicators when required, which resulted in a safe operation.",
+        2: "The pilot managed workload at the minimum acceptable level, by only occasionally demonstrating some of the performance indicators when required, but which did not result in an unsafe situation.",
+        1: "The pilot did not manage workload effectively, by rarely demonstrating any of the performance indicators when required, which resulted in an unsafe situation.",
+    },
+}
+
+# OM-D §3.1.1.1 Flight Phase definitions, used for the Grading Standard reference tab.
+PHASE_DEFINITIONS = {
+    1: "Flight preparation to completion of line-up.",
+    2: "From the application of take-off thrust until the completion of flap and slat retraction.",
+    3: "From the completion of flap and slat retraction until top of climb.",
+    4: "From top of climb until top of descent.",
+    5: "From top of descent until the earlier of first slat/flap extension or crossing the initial approach fix.",
+    6: "From the earlier of first slat/flap extension or crossing the initial approach fix until 15 m (50 ft) AAL, including go-around.",
+    7: "From 15 m (50 ft) AAL until reaching taxi speed.",
+    8: "From reaching taxi speed until engine shutdown.",
+}
+
 
 STANDARD_PHRASE_BANK = {
     5: [
@@ -762,6 +1173,7 @@ for i in range(len(st.session_state.slot_list)):
 st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
 uploaded_scen = st.sidebar.file_uploader("Upload Scenarios.csv", type=["csv"])
 uploaded_comp = st.sidebar.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags.")
+uploaded_scenario_obs = st.sidebar.file_uploader("Upload Scenario_Observable_Behaviours.xlsx (optional)", type=["xlsx"], help="Per-event PTA and Observable Behaviours authored by your training team — takes priority over the generic ATA-family fallback for any event it covers.")
 
 st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
 st.sidebar.markdown("<div class='sidebar-header'>📚 DOCUMENT REFERENCES</div>", unsafe_allow_html=True)
@@ -783,6 +1195,14 @@ def resource_path(relative_path):
 
 scenarios_source = uploaded_scen if uploaded_scen is not None else resource_path("Scenarios.csv")
 competency_source = uploaded_comp if uploaded_comp is not None else (resource_path("Keypams.xlsx") if os.path.exists(resource_path("Keypams.xlsx")) else None)
+scenario_obs_source = uploaded_scenario_obs if uploaded_scenario_obs is not None else (resource_path("Scenario_Observable_Behaviours.xlsx") if os.path.exists(resource_path("Scenario_Observable_Behaviours.xlsx")) else None)
+
+if scenario_obs_source is not None:
+    SCENARIO_OB_LIBRARY, scenario_obs_err = load_scenario_obs_library(scenario_obs_source)
+    if scenario_obs_err:
+        st.sidebar.warning(f"Could not read Scenario_Observable_Behaviours.xlsx: {scenario_obs_err}")
+    elif SCENARIO_OB_LIBRARY:
+        st.sidebar.success(f"✓ {len(SCENARIO_OB_LIBRARY)} scenario-specific OB profile(s) loaded.")
 
 @st.cache_data(show_spinner="Loading and caching matrix scenarios...")
 def load_scenario_database(s_source, c_source):
@@ -828,13 +1248,28 @@ def load_scenario_database(s_source, c_source):
 
         def resolve_competencies(ev, phase, ata):
             codes = set()
-            ev_upper = str(ev).upper()
+            ev_upper = str(ev).replace("\xa0", " ").upper()
             for ex_key, ex_data in PROGRAM_SYLLABUS_EXERCISES.items():
                 if ex_key == "EX-00_GENERIC":
                     continue
                 if any(kw in ev_upper for kw in ex_data["keywords"]):
                     codes.update(ex_data["cbta_focus"])
-            
+            if codes:
+                return sorted(codes)
+
+            # A training-team-authored scenario-specific entry is more
+            # authoritative than the blunter Keypams.xlsx flags, so it's
+            # checked before Keypams, not after.
+            if SCENARIO_OB_LIBRARY:
+                norm_ev_lib = _normalize_event_name(ev)
+                lib_entry = SCENARIO_OB_LIBRARY.get(norm_ev_lib)
+                if lib_entry is None:
+                    close_lib = difflib.get_close_matches(norm_ev_lib, list(SCENARIO_OB_LIBRARY.keys()), n=1, cutoff=0.72)
+                    if close_lib:
+                        lib_entry = SCENARIO_OB_LIBRARY[close_lib[0]]
+                if lib_entry:
+                    return sorted(lib_entry["cbta_focus"])
+
             if comp_lookup:
                 norm_ev = _normalize_event_name(ev)
                 hit = comp_lookup.get(norm_ev)
@@ -854,9 +1289,9 @@ def load_scenario_database(s_source, c_source):
                     codes.update(hit)
             if codes:
                 return sorted(codes)
-            # No keyword or Keypams match — fall back to the ATA-chapter
-            # family generic (more specific than the fully generic set)
-            # when the event's ATA chapter maps to one.
+            # No keyword, scenario-library, or Keypams match — fall back to
+            # the ATA-chapter family generic (more specific than the fully
+            # generic set) when the event's ATA chapter maps to one.
             _, _, fallback_focus = get_exercise_for_event(ev, ata)
             return sorted(fallback_focus)
 
@@ -959,13 +1394,50 @@ if df is not None:
 # ==========================================
 # NAVIGATION TABS
 # ==========================================
-tab_session, tab_env, tab_orca, tab_selector, tab_debrief = st.tabs([
+tab_session, tab_env, tab_orca, tab_selector, tab_standard, tab_debrief = st.tabs([
     "⚙️ Session Setup", 
     "🌐 Environment & IOS", 
     "📋 OPC & ORCA Workflow",
     "🎯 Scenario Selector",
+    "📐 Grading Standard",
     "📊 Session Debrief"
 ])
+
+with tab_standard:
+    st.markdown("#### 📐 KM Malta Airlines Official Grading Standard")
+    st.markdown("Sourced directly from **Operations Manual Part D, §3.1.1.1 (Grading System)**. Reference this before and during grading — every instructor grading against the same published wording is what makes grading consistent across the training department.")
+
+    st.markdown("<b>1–5 Grading Scale</b>", unsafe_allow_html=True)
+    for g in [5, 4, 3, 2, 1]:
+        badge = "status-badge-ok" if g >= 2 else "status-badge-warn"
+        st.markdown(f"""
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:6px;">
+            <div class="{badge}" style="min-width:150px;">Grade {g} ({GRADE_LABELS[g]})</div>
+            <div style="font-size:12.5px; opacity:0.9;">{GRADE_DESCRIPTORS[g]}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown("<div style='font-size:11px; opacity:0.65; margin-top:4px;'>Grade 2 is a pass, not a fail — but OM-D requires it to be reviewed by DCT. Grade 1 triggers the Below Adequate Grading process (APP.5.1.11 during training/LIFUS, APP.5.1.12 during a check).</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
+    st.markdown("<b>Core Competencies & Key Performance Indicators (KPIs)</b>", unsafe_allow_html=True)
+    sel_comp_ref = st.selectbox("View KPIs and per-grade wording for:", options=list(COMPETENCY_KEYS.keys()), format_func=lambda x: f"{x} – {COMPETENCY_KEYS[x]}", key="grading_standard_comp_select")
+    st.markdown("<div style='font-size:11.5px; opacity:0.7; margin-bottom:6px;'>Key Performance Indicators:</div>", unsafe_allow_html=True)
+    for kpi in COMPETENCY_KPIS.get(sel_comp_ref, []):
+        st.markdown(f"<div style='font-size:12.5px; margin-bottom:3px;'>• {kpi}</div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    for g in [5, 4, 3, 2, 1]:
+        badge = "status-badge-ok" if g >= 2 else "status-badge-warn"
+        st.markdown(f"""
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:6px;">
+            <div class="{badge}" style="min-width:64px;">Grade {g}</div>
+            <div style="font-size:12px; opacity:0.9;">{COMPETENCY_GRADE_TEXT.get(sel_comp_ref, {}).get(g, '')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
+    st.markdown("<b>Flight Phase Definitions</b>", unsafe_allow_html=True)
+    for p, desc in PHASE_DEFINITIONS.items():
+        st.markdown(f"<div style='font-size:12px; margin-bottom:3px;'><b>{PHASE_NAMES[p]}:</b> {desc}</div>", unsafe_allow_html=True)
 
 # NOTE: tab_env's inputs are collected here, BEFORE tab_session, even
 # though tab_session is visually the first tab (visual order is fixed by
@@ -1140,6 +1612,15 @@ with tab_session:
                 ov_data = st.session_state.slot_overrides[s_id]
                 final_df.loc[idx, "EVENT"] = ov_data["EVENT"]
                 final_df.loc[idx, "DOD"] = ov_data["DOD"]
+                # A swapped-in scenario has its own ATA chapter and
+                # competency profile — refresh both from the master matrix
+                # so the OB display, competency chips, and grading grid
+                # match the event actually selected, not the one it
+                # replaced.
+                src_match = df[(df["EVENT"] == ov_data["EVENT"]) & (df["DOD"] == ov_data["DOD"])]
+                if not src_match.empty:
+                    final_df.loc[idx, "ATA"] = src_match.iloc[0]["ATA"]
+                    final_df.at[idx, "COMPETENCIES"] = src_match.iloc[0]["COMPETENCIES"]
 
         total_dod = final_df["DOD"].sum()
         
@@ -1168,6 +1649,32 @@ with tab_session:
 
             with st.expander(f"Slot #{slot_num:02d} — {row['PHASE_NAME']} | DOD {dod} | {event_title} ({role})", expanded=False):
                 st.markdown(f"<div style='font-size:11px; opacity:0.65; margin-bottom:6px;'>OB profile: <b>{exercise_title}</b></div>", unsafe_allow_html=True)
+
+                # Manual scenario swap: lets the instructor pick a different
+                # event for this slot, constrained to the same Phase and DOD
+                # so it stays compatible with the slot's sidebar configuration
+                # and doesn't disturb the rest of the session's DOD balance.
+                # This existed in an earlier iteration and was lost — the
+                # underlying st.session_state.slot_overrides mechanism was
+                # still being *read* elsewhere in the file, but nothing
+                # ever *wrote* to it, so overrides could never actually
+                # happen.
+                swap_pool = df[(df["PHASES"] == phase_num) & (df["DOD"] == dod)]
+                swap_options = sorted(swap_pool["EVENT"].unique().tolist())
+                if event_title not in swap_options:
+                    swap_options = [event_title] + swap_options
+                current_idx = swap_options.index(event_title)
+                swap_choice = st.selectbox(
+                    f"🔁 Swap Event (Slot #{slot_num:02d}) — same Phase & DOD",
+                    options=swap_options,
+                    index=current_idx,
+                    key=f"swap_event_{slot_num}",
+                    help="Pick a different event if the auto-selected one doesn't fit well alongside the other slots — only events matching this slot's Phase and DOD are offered, so the session's DOD balance stays valid."
+                )
+                if swap_choice != event_title:
+                    st.session_state.slot_overrides[slot_num] = {"EVENT": swap_choice, "DOD": dod}
+                    st.rerun()
+
                 st.markdown("""
                 <div style='background-color: var(--secondary-background-color); padding: 18px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);'>
                     <h5 style='color: #0284C7; margin-top: 0; margin-bottom: 16px;'>⏱️ Chronological Execution Sequence & OB Markers</h5>
@@ -1200,16 +1707,15 @@ with tab_session:
                         f"KM Malta Grade (Slot #{slot_num:02d})",
                         options=[5, 4, 3, 2, 1],
                         index=2,
-                        format_func=lambda x: {
-                            5: "Grade 5 (Exemplary)",
-                            4: "Grade 4 (Above Standard)",
-                            3: "Grade 3 (Standard – Expected Level)",
-                            2: "Grade 2 (Competent, Needs Follow-Up)",
-                            1: "Grade 1 (Not Competent)"
-                        }[x],
+                        format_func=lambda x: f"Grade {x} ({GRADE_LABELS[x]})",
                         key=f"grade_slot_{slot_num}"
                     )
-                    st.markdown(f"<div style='font-size:11px; opacity:0.7; font-style:italic; margin-top:-6px;'>{GRADE_DESCRIPTORS[instructor_grades[slot_num]]}</div>", unsafe_allow_html=True)
+                    grade_now_for_display = instructor_grades[slot_num]
+                    st.markdown(f"<div style='font-size:11px; opacity:0.7; font-style:italic; margin-top:-6px;'>{GRADE_DESCRIPTORS[grade_now_for_display]}</div>", unsafe_allow_html=True)
+                    if demonstrated:
+                        with st.expander("📐 Official per-competency wording at this grade (OM-D §3.1.1.1)", expanded=False):
+                            for code in demonstrated:
+                                st.markdown(f"<div style='font-size:11px; margin-bottom:6px;'><b style='color:#0284C7;'>{code}</b> — {COMPETENCY_GRADE_TEXT.get(code, {}).get(grade_now_for_display, '')}</div>", unsafe_allow_html=True)
                 with g_col2:
                     grade_now = instructor_grades[slot_num]
                     phrase_choice = st.selectbox(
@@ -1364,7 +1870,7 @@ with tab_orca:
                         f"Grade ({ex_data['title'][:25]}...)",
                         options=[5, 4, 3, 2, 1],
                         index=2,
-                        format_func=lambda x: f"Grade {x}",
+                        format_func=lambda x: f"Grade {x} ({GRADE_LABELS[x]})",
                         key=f"up_grade_{e_key}"
                     )
                     st.markdown(f"<div style='font-size:10.5px; opacity:0.7; font-style:italic; margin-top:-6px;'>{GRADE_DESCRIPTORS[uploaded_grades[e_key]]}</div>", unsafe_allow_html=True)
