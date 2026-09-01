@@ -7,7 +7,7 @@
 [theme]
 base = "dark"
 primaryColor = "#F5A623"
-backgroundColor = "#0B0E13"
+backgroundColor = "#041f4d"
 secondaryBackgroundColor = "#343c4a"
 textColor = "#E8EAED"
 font = "monospace"
