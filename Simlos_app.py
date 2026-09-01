@@ -168,6 +168,38 @@
 #                    and fixed (ver30's detail counts, this version's
 #                    dual-candidate header) were the complete list, not
 #                    a sample of more still hiding elsewhere.
+#   ver32        — Fixed a real Streamlit Cloud bug: after updating
+#                  Scenario_Observable_Behaviours.xlsx and Keypams.xlsx
+#                  and syncing to GitHub, the deployed app kept reporting
+#                  stale counts (e.g. 34 profiles) while a fresh local
+#                  run correctly showed 47 — same file, stale result.
+#                  Root cause: load_scenario_obs_library() and
+#                  load_scenario_database() are @st.cache_data, and their
+#                  real argument for an auto-loaded (non-uploaded) file
+#                  is a plain bundled-file PATH STRING — st.cache_data
+#                  keys on argument VALUE, not file content, so replacing
+#                  what's at that path doesn't necessarily bust the
+#                  cache, especially if Streamlit Cloud does a
+#                  soft git-pull-and-rerun rather than a full process
+#                  restart on a data-only file change.
+#                  Fix: added _file_cache_token(source) (file mtime when
+#                  source is a path) as an extra argument to both cached
+#                  functions, so any on-disk replacement changes the
+#                  effective cache key too. First attempt at this named
+#                  the parameter "_cache_token" — which st.cache_data
+#                  silently EXCLUDES from its hash entirely (any
+#                  underscore-prefixed parameter is, by design, meant for
+#                  passing unhashable objects like DB connections through
+#                  the cache safely) — so that version compiled fine and
+#                  looked correct but did precisely nothing. Caught this
+#                  by reproducing the exact failure in an isolated
+#                  two-line repro before and after the rename, then
+#                  re-verified against the real app: same AppTest
+#                  instance, bundled file swapped mid-session (no new
+#                  process), profile count now correctly moves from 3→9
+#                  and Scenarios.csv row count from 5→11 without any
+#                  manual "Reboot app". Renamed to cache_token /
+#                  cache_token_a / cache_token_b throughout.
 # ==========================================
 import streamlit as st
 import pandas as pd
@@ -1252,8 +1284,47 @@ ATA_FAMILY_GENERIC = {
 SCENARIO_OB_LIBRARY = {}  # populated after sidebar upload — normalized event name -> {"pta":, "sequence":, "cbta_focus":}
 
 
+def _file_cache_token(source):
+    """Extra cache-key input for the @st.cache_data loaders below, whose
+    real argument is often a plain bundled-file PATH STRING (e.g.
+    "Scenario_Observable_Behaviours.xlsx" from find_bundled_file) rather
+    than an uploaded-file object. st.cache_data keys its cache on the
+    argument's VALUE — for a path string that's just the path text, not
+    the file's actual bytes on disk. So replacing what's AT that path
+    (e.g. a `git push` to Streamlit Cloud that updates the file without
+    necessarily forcing a full process restart) can silently keep
+    serving a stale cached read, because from the cache's point of view
+    the argument never changed. This has already caused a real, hard
+    to diagnose bug: after updating Scenario_Observable_Behaviours.xlsx
+    and syncing to GitHub, the deployed app kept reporting an old
+    profile count (34) while a fresh local run correctly showed 47 —
+    same file, stale cache.
+    Passing this token alongside the path means any on-disk replacement
+    changes the effective cache key too, forcing a fresh read
+    automatically — no manual "Reboot app" needed. Uploaded-file-widget
+    objects don't need this: Streamlit's cache_data already hashes those
+    by their actual bytes, not by identity/path.
+
+    IMPORTANT: this token must be received as a parameter WITHOUT a
+    leading underscore wherever it's used (see cache_token below, and
+    cache_token_a/cache_token_b on load_scenario_database). st.cache_data
+    silently EXCLUDES any underscore-prefixed parameter from its hash key
+    entirely (that's the documented mechanism for passing unhashable
+    objects like DB connections through the cache safely) — this
+    function's first version named it "_cache_token", which meant the
+    fix did nothing at all despite the token itself correctly changing
+    on every call. Confirmed by reproducing the exact failure in
+    isolation (a trivial cache_data test with an underscore-prefixed
+    parameter) before renaming.
+    """
+    try:
+        return os.path.getmtime(source) if isinstance(source, (str, os.PathLike)) and os.path.exists(source) else None
+    except Exception:
+        return None
+
+
 @st.cache_data(show_spinner="Loading scenario-specific Observable Behaviours...")
-def load_scenario_obs_library(source):
+def load_scenario_obs_library(source, cache_token=None):
     """Load a Scenario_Observable_Behaviours.xlsx (built from the template)
     into a lookup usable by get_exercise_for_event. Rows with no OB text
     filled in are skipped entirely, so an event with an empty row still
@@ -1922,12 +1993,12 @@ with tab_session:
     ])
 
     if scenario_obs_source is not None:
-        SCENARIO_OB_LIBRARY, scenario_obs_err = load_scenario_obs_library(scenario_obs_source)
+        SCENARIO_OB_LIBRARY, scenario_obs_err = load_scenario_obs_library(scenario_obs_source, _file_cache_token(scenario_obs_source))
         if scenario_obs_err:
             st.warning(f"Could not read {source_display_name(scenario_obs_source)}: {scenario_obs_err}")
 
     @st.cache_data(show_spinner="Loading and caching matrix scenarios...")
-    def load_scenario_database(s_source, c_source):
+    def load_scenario_database(s_source, c_source, cache_token_a=None, cache_token_b=None):
         try:
             df_raw = pd.read_csv(s_source, encoding="cp1252") if os.path.exists(str(s_source)) or hasattr(s_source, 'read') else pd.read_csv(s_source, encoding="utf-8")
             df_raw.columns = [str(c).strip() for c in df_raw.columns]
@@ -2023,7 +2094,7 @@ with tab_session:
         except Exception as e:
             return None, str(e)
 
-    df, match_stats = load_scenario_database(scenarios_source, competency_source)
+    df, match_stats = load_scenario_database(scenarios_source, competency_source, _file_cache_token(scenarios_source), _file_cache_token(competency_source))
 
     def _source_tag(source, uploaded_widget_value):
         if uploaded_widget_value is not None:
