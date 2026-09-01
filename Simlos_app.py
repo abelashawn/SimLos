@@ -1,3 +1,149 @@
+# ==========================================
+# DEPLOYMENT FILE: simlos_app.py (GitHub / Streamlit Cloud entry point)
+# This filename is now stable — do not rename per-change. Paste future
+# updates directly into this file. Internal version history is tracked
+# here in comments (newest last); a separately-named dev copy
+# (Sim_verNN.py) is kept per change for local diffing/rollback.
+#
+# VERSION HISTORY
+#   ver24        — designated stable baseline (as Sim_ver24.py)
+#   ver25        — fix: os.path.basename(scenario_obs_source) TypeError
+#                  when scenario_obs_source is a Streamlit UploadedFile
+#                  rather than a path string (crashed the sidebar
+#                  auto-load success/warning message). Added
+#                  source_display_name() helper; also routed
+#                  _source_tag() through it for consistency.
+#   simlos_app   — renamed from Sim_ver2.py (the prior GitHub filename)
+#                  to this stable name, content = ver25. No code changes
+#                  in this step, filename only.
+#   ver26        — Dashboard redesign (dark/amber "ops console" look):
+#                  - New forced dark theme (KM_BG/KM_PANEL/KM_AMBER
+#                    palette) replacing the old light-blue accent theme.
+#                  - Tabs renamed to short-code + label ("SES · Session
+#                    Setup", "ENV · Environment & IOS", etc.) with amber
+#                    active-tab styling.
+#                  - Session Setup tab restructured into a two-column
+#                    dashboard: left = Slot Configuration, Session
+#                    Metadata & Device Setup (+ new Aircraft/Program/
+#                    Duration fields), Data Sources, Document
+#                    References; right = Session Summary (live stats),
+#                    Competency Coverage (9 badges, amber-highlighted
+#                    for whichever competencies the current slot plan
+#                    actually targets), and the Build Session Plan CTA.
+#                  - Top header (logo, title, Session/Candidate,
+#                    DATA/DRAFT/SYNCED status pills) now renders via a
+#                    st.empty() placeholder created at the very top of
+#                    the script and filled in once session/data-source
+#                    state exists further down.
+#                  - Fixed a latent crash: match_stats.get(...) was
+#                    called unconditionally, but load_scenario_database()
+#                    returns match_stats as a plain error string (not a
+#                    dict) when Scenarios.csv can't be loaded at all —
+#                    now guarded.
+#                  - Verified with py_compile, ast.parse, and
+#                    streamlit.testing.v1.AppTest (full script execution,
+#                    zero exceptions) before shipping.
+#   ver27        — Typeface changed to Geist Mono app-wide: global
+#                  font-family (was Inter) plus both inline 'monospace'
+#                  fallbacks (.jepp-card, live METAR feed block) now
+#                  specify 'Geist Mono' explicitly, loaded via
+#                  @fontsource CDN import.
+#   ver28        — UI polish pass per instructor feedback on ver26/27:
+#                  - Font size set to 10px app-wide (base rule only, not
+#                    !important on font-size — so .km-title/.stat-value/
+#                    etc. keep their own larger explicit sizes; only
+#                    elements with no explicit size pick up the 10px
+#                    default).
+#                  - Fixed Competency Coverage badges: they were lit
+#                    from each slot's 'Target Competency' FILTER dropdown
+#                    (almost always "Any", so badges barely lit
+#                    regardless of the actual plan) instead of the real
+#                    per-event COMPETENCIES data resolve_competencies()
+#                    already computes elsewhere in this file. Now sourced
+#                    from st.session_state.final_df once a plan is built;
+#                    falls back to the filter-based preview before that.
+#                  - Fixed native Streamlit header/toolbar bar clipping
+#                    the custom .km-header: block-container's padding-top
+#                    (0.8rem) was smaller than the native fixed header's
+#                    height, so the top of the custom header rendered
+#                    underneath it. Hidden the native header/toolbar
+#                    entirely (stHeader, stToolbar) — this is a fully
+#                    custom-branded console page, not a generic Streamlit
+#                    app, so the default chrome (hamburger/Deploy/running
+#                    man) wasn't wanted anyway.
+#                  - Added :root CSS variable overrides (--text-color,
+#                    --background-color, --secondary-background-color,
+#                    --primary-color, --font) so native widgets AND the
+#                    older var(--...)-based helpers (competency Venn SVG,
+#                    OB flow cards) render dark instead of defaulting to
+#                    Streamlit's light theme — this was the source of the
+#                    "white background" patches.
+#                  - Added .streamlit/config.toml (new file) with a
+#                    matching dark theme, for the widgets CSS overrides
+#                    alone don't reliably reach (dataframe internals,
+#                    some BaseWeb portal-rendered menus).
+#                  NOTE: header-cutoff and white-background diagnoses were
+#                  made from source review only (no screenshot available)
+#                  — please confirm both are actually resolved after
+#                  deploying, since there could be a second contributing
+#                  cause I couldn't see from code alone.
+#   ver29        — Follow-up fixes from instructor testing of ver28:
+#                  - Competency Coverage badges were still showing 0/9
+#                    right after clicking "Build Session Plan". Root
+#                    cause: the panel is rendered EARLIER in script order
+#                    than the generation block that sets
+#                    st.session_state.final_df, so on the click's own
+#                    rerun it still saw stale/empty state. Added
+#                    st.rerun() right after final_df is set (plus a
+#                    just_generated flag so the success toast still shows
+#                    on the next pass) — verified end-to-end with a test
+#                    Scenarios.csv + AppTest button click: coverage note
+#                    now correctly reads "N of 9 ... actually targeted"
+#                    on the very click that builds the plan.
+#                  - Found (via that same test) a PRE-EXISTING crash,
+#                    unrelated to the above: clicking "Build Session
+#                    Plan" with no Scenarios.csv loaded raised
+#                    TypeError: 'NoneType' object is not subscriptable.
+#                    Generation block now guarded with an
+#                    if df is None or df.empty check and a friendly
+#                    st.warning() instead.
+#                  - Font size: the ver28 attempt (10px, no !important)
+#                    only shrank plain unstyled text — Streamlit's own
+#                    CSS sets font-size directly on native widgets
+#                    (buttons/inputs/tabs/dataframe) with higher
+#                    specificity than a plain html/body rule, so those
+#                    stayed at Streamlit's default, an inconsistent mix
+#                    reported as "too small / unreadable". Bumped to
+#                    14px and added !important so it actually takes
+#                    hold app-wide. Trade-off: this also flattens this
+#                    file's own smaller/larger custom classes (.km-title
+#                    16px, .stat-value 17px, .comp-badge 11px, etc.)
+#                    to 14px too, since none of them use !important
+#                    themselves — full size hierarchy can be restored on
+#                    request by adding !important to those specific
+#                    classes.
+#                  Naming convention change per instructor request: from
+#                  this version on, every delivered file is named
+#                  Sim_verNN.py with NN increasing sequentially — no more
+#                  parallel simlos_app.py copy each turn. Copy this
+#                  file's contents into simlos_app.py on GitHub manually
+#                  when ready to deploy it.
+#   ver30        — Restored data-source detail counts that silently
+#                  disappeared in the ver26 "Data Sources" panel redesign:
+#                  that redesign collapsed the old informative status line
+#                  ("Scenarios.csv — 282 scenario/phase rows", "Keypams —
+#                  cross-matched 64/124 events (52%)", "Scenario OBs — 34
+#                  profile(s)") down to a bare LOADED/OPTIONAL flag with
+#                  no numbers. Added a .ds-detail line under each LOADED
+#                  row showing the real count/match-rate again, using
+#                  data (match_stats, len(df), len(SCENARIO_OB_LIBRARY))
+#                  that was already being computed — just never
+#                  re-displayed after the redesign. Verified end-to-end
+#                  with AppTest + a test Scenarios.csv: correctly renders
+#                  "9 scenario/phase rows" / "35 scenario-specific
+#                  profile(s)" and correctly omits the detail line for
+#                  Keypams.xlsx when it isn't loaded (OPTIONAL, no file).
+# ==========================================
 import streamlit as st
 import pandas as pd
 import io
@@ -208,147 +354,328 @@ def get_candidate_history(staff_number):
 # PAGE CONFIG & HYBRID THEME STYLING
 # ==========================================
 st.set_page_config(
-    page_title="Flight Sim Scenario & EBT Competency Optimizer",
+    page_title="EBT Session Optimizer",
     page_icon="✈️",
     layout="wide"
 )
 
 init_db()
 
-st.markdown("""
+# ==========================================
+# DASHBOARD THEME — dark/amber "ops console" look
+#
+# Forced (not var(--...)) dark palette so the app reads the same
+# regardless of the viewer's OS/browser theme — this is a branded
+# console, not a document that should follow light/dark preference.
+# ==========================================
+KM_BG = "#0B0E13"
+KM_PANEL = "#12161D"
+KM_PANEL_ALT = "#171C24"
+KM_BORDER = "rgba(255,255,255,0.08)"
+KM_TEXT = "#E8EAED"
+KM_TEXT_MUTED = "#8B94A3"
+KM_AMBER = "#F5A623"
+KM_AMBER_DIM = "rgba(245,166,35,0.15)"
+KM_GREEN = "#34D399"
+KM_GRAY_DOT = "#5B6472"
+
+st.markdown(f"""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    .block-container {
-        padding-top: 1.0rem !important;
+    @import url('https://cdn.jsdelivr.net/npm/@fontsource/geist-mono/index.css');
+
+    :root {{
+        /* Streamlit's native theme variables default to a LIGHT theme
+        unless a .streamlit/config.toml [theme] section overrides them.
+        Several older helper functions in this file (SVG competency
+        Venn diagram, OB flow cards) still render color via var(--...)
+        rather than the KM_* constants — overriding the variables here
+        means those elements go dark too, without editing every call
+        site individually. */
+        --text-color: {KM_TEXT} !important;
+        --background-color: {KM_BG} !important;
+        --secondary-background-color: {KM_PANEL} !important;
+        --primary-color: {KM_AMBER} !important;
+        --font: 'Geist Mono', monospace !important;
+    }}
+
+    html, body, [class*="css"] {{
+        font-family: 'Geist Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace !important;
+        font-size: 14px !important;
+    }}
+    /* Streamlit's own generated CSS sets font-size directly on many native
+    widgets (buttons, inputs, tab labels, dataframe cells) with selectors
+    more specific than a plain html/body rule — so the earlier
+    non-!important attempt only shrank plain unstyled text and left those
+    widgets at Streamlit's default, an inconsistent mix rather than a
+    uniform, readable size. !important here forces one base size
+    app-wide, INCLUDING this file's own smaller/larger custom classes
+    below (.km-title 16px, .stat-value 17px, .comp-badge 11px, etc.) —
+    none of those have !important of their own, so this rule beats them
+    regardless of their higher selector specificity. Net effect: the
+    whole app reads at a uniform 14px now rather than the mixed/tiny
+    result before. If the size hierarchy (bigger titles, smaller badges)
+    is wanted back, say so and !important can be added to those specific
+    classes individually so they win over this rule again. */
+
+    /* ---------- Hide Streamlit's native header/toolbar chrome ----------
+    This is a custom-branded console, not a generic Streamlit page — the
+    default header bar (hamburger menu / Deploy button / running-man) sat
+    directly on top of .km-header below because block-container's
+    padding-top is much smaller than that bar's native height, clipping
+    the top of the custom header. Hiding it removes the overlap and the
+    stray chrome at once; block-container's own small top padding is
+    enough breathing room once it's gone. */
+    [data-testid="stHeader"] {{
+        display: none !important;
+    }}
+    [data-testid="stToolbar"] {{
+        visibility: hidden !important;
+    }}
+    .stApp {{
+        background-color: {KM_BG} !important;
+    }}
+    .block-container {{
+        padding-top: 0.8rem !important;
         padding-bottom: 1.0rem !important;
-        max-width: 96% !important;
-    }
-    
-    h1, h2, h3, h4 { color: #0284C7 !important; font-weight: 700 !important; margin-top: 6px !important; margin-bottom: 6px !important;}
-    
-    div[data-baseweb="tab-list"] {
+        max-width: 97% !important;
+    }}
+    [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{
+        background-color: {KM_BG} !important;
+    }}
+    p, li, span, label, div {{ color: {KM_TEXT}; }}
+
+    h1, h2, h3, h4 {{ color: {KM_TEXT} !important; font-weight: 700 !important; margin-top: 6px !important; margin-bottom: 6px !important;}}
+
+    /* ---------- Top app header ---------- */
+    .km-header {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background-color: {KM_PANEL};
+        border: 1px solid {KM_BORDER};
+        border-radius: 12px;
+        padding: 14px 22px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+        gap: 14px;
+    }}
+    .km-header-left {{ display: flex; align-items: center; gap: 14px; }}
+    .km-logo {{
+        width: 42px; height: 42px; border-radius: 10px;
+        background: {KM_AMBER};
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; flex-shrink: 0;
+    }}
+    .km-title {{ font-size: 16px; font-weight: 800; letter-spacing: 0.03em; color: {KM_TEXT}; line-height: 1.2; }}
+    .km-subtitle {{ font-size: 11.5px; color: {KM_TEXT_MUTED}; font-weight: 500; margin-top: 1px; }}
+    .km-header-right {{ display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }}
+    .km-meta {{ text-align: left; }}
+    .km-meta-label {{ font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: {KM_TEXT_MUTED}; font-weight: 700; }}
+    .km-meta-value {{ font-size: 13px; font-weight: 700; color: {KM_TEXT}; }}
+    .km-meta-value-accent {{ color: {KM_AMBER}; }}
+    .km-pills {{ display: flex; gap: 8px; }}
+    .km-pill {{
+        display: flex; align-items: center; gap: 6px;
+        background-color: {KM_PANEL_ALT};
+        border: 1px solid {KM_BORDER};
+        border-radius: 20px;
+        padding: 5px 11px;
+        font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+        color: {KM_TEXT_MUTED};
+    }}
+    .km-dot {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; }}
+    .km-dot-green {{ background-color: {KM_GREEN}; }}
+    .km-dot-amber {{ background-color: {KM_AMBER}; }}
+    .km-dot-gray {{ background-color: {KM_GRAY_DOT}; }}
+
+    /* ---------- Tab bar (short-code + label pills) ---------- */
+    div[data-baseweb="tab-list"] {{
         display: flex !important;
         flex-wrap: wrap !important;
         gap: 4px !important;
         overflow-x: visible !important;
-    }
-    div[data-baseweb="tab"] {
+        background-color: {KM_PANEL} !important;
+        border: 1px solid {KM_BORDER} !important;
+        border-radius: 10px !important;
+        padding: 5px !important;
+    }}
+    div[data-baseweb="tab"] {{
         white-space: normal !important;
         height: auto !important;
-        min-height: 38px !important;
-        padding: 6px 12px !important;
-    }
+        min-height: 34px !important;
+        padding: 6px 14px !important;
+        border-radius: 7px !important;
+        color: {KM_TEXT_MUTED} !important;
+    }}
+    div[data-baseweb="tab"] p {{ font-size: 12.5px !important; font-weight: 700 !important; letter-spacing: 0.02em; }}
+    div[data-baseweb="tab"][aria-selected="true"] {{
+        background-color: {KM_AMBER_DIM} !important;
+        color: {KM_AMBER} !important;
+    }}
+    div[data-baseweb="tab"][aria-selected="true"] p {{ color: {KM_AMBER} !important; }}
+    div[data-baseweb="tab-highlight"] {{ background-color: {KM_AMBER} !important; }}
 
-    div[data-testid="stMetric"] {
-        background-color: var(--secondary-background-color) !important;
-        border: 1px solid rgba(128, 128, 128, 0.2) !important;
-        border-radius: 8px !important;
+    /* ---------- Cards / panels ---------- */
+    div[data-testid="stMetric"], .ios-card {{
+        background-color: {KM_PANEL} !important;
+        border: 1px solid {KM_BORDER} !important;
+        border-radius: 10px !important;
         padding: 12px 16px !important;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
-    }
-    div[data-testid="stMetricLabel"] * {
-        color: var(--text-color) !important;
-        opacity: 0.8 !important;
-        font-weight: 600 !important;
-    }
-    div[data-testid="stMetricValue"] * {
-        color: var(--text-color) !important;
-        font-weight: 700 !important;
-    }
+    }}
+    div[data-testid="stMetricLabel"] * {{ color: {KM_TEXT_MUTED} !important; font-weight: 700 !important; text-transform: uppercase; font-size: 10.5px !important; letter-spacing: 0.05em; }}
+    div[data-testid="stMetricValue"] * {{ color: {KM_TEXT} !important; font-weight: 800 !important; }}
+    [data-testid="stVerticalBlockBorderWrapper"] > div {{ background-color: {KM_PANEL}; border-radius: 10px; }}
+    div[data-testid="stExpander"] {{ background-color: {KM_PANEL} !important; border: 1px solid {KM_BORDER} !important; border-radius: 10px !important; }}
 
-    .ios-card {
-        background-color: var(--secondary-background-color);
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin-bottom: 10px;
-    }
-    .ios-label {
-        font-size: 11px;
-        color: var(--text-color);
-        opacity: 0.7;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+    .ios-label {{
+        font-size: 11px; color: {KM_TEXT_MUTED}; text-transform: uppercase;
+        letter-spacing: 0.05em; font-weight: 700;
+    }}
+
+    /* ---------- Panel header: small amber code chip + uppercase title ---------- */
+    .panel-head {{ display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }}
+    .panel-code {{
+        background-color: {KM_AMBER_DIM}; color: {KM_AMBER};
+        font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
+        padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(245,166,35,0.3);
+    }}
+    .panel-title-text {{ font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em; color: {KM_TEXT}; text-transform: uppercase; }}
+
+    /* ---------- Session Summary stat blocks ---------- */
+    .stat-label {{ font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.07em; color: {KM_TEXT_MUTED}; font-weight: 700; margin-bottom: 2px; }}
+    .stat-value {{ font-size: 17px; font-weight: 800; color: {KM_TEXT}; }}
+    .stat-value-accent {{ color: {KM_AMBER}; }}
+    .stat-value-green {{ color: {KM_GREEN}; }}
+
+    /* ---------- Competency badges ---------- */
+    .comp-badge {{
+        display: inline-block; font-size: 11px; font-weight: 800;
+        padding: 4px 10px; border-radius: 5px; margin: 2px 4px 2px 0;
+        letter-spacing: 0.03em;
+    }}
+    .comp-badge-active {{ background-color: {KM_AMBER}; color: #1A1206; border: 1px solid {KM_AMBER}; }}
+    .comp-badge-inactive {{ background-color: transparent; color: {KM_GRAY_DOT}; border: 1px solid {KM_BORDER}; }}
+
+    /* ---------- Data source / doc reference rows ---------- */
+    .ds-row {{
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 9px 12px; background-color: {KM_PANEL_ALT};
+        border: 1px solid {KM_BORDER}; border-radius: 7px; margin-bottom: 7px; font-size: 12.5px;
         font-weight: 600;
-    }
+    }}
+    .ds-status-loaded {{ color: {KM_GREEN}; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; }}
+    .ds-status-optional {{ color: {KM_TEXT_MUTED}; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; }}
+    .ds-detail {{ font-size: 10.5px; color: {KM_TEXT_MUTED}; margin: -4px 0 7px 12px; }}
+    .doc-ref-row {{ font-size: 12px; color: {KM_TEXT_MUTED}; margin-bottom: 4px; }}
+    .doc-ref-tag {{ color: {KM_AMBER}; font-weight: 700; }}
 
-    .jepp-card {
-        background-color: var(--secondary-background-color);
-        border: 2px solid #0284C7;
+    .jepp-card {{
+        background-color: {KM_PANEL_ALT};
+        border: 2px solid {KM_AMBER};
         border-radius: 6px;
         padding: 14px;
-        font-family: monospace;
-        color: var(--text-color);
+        font-family: 'Geist Mono', monospace;
+        color: {KM_TEXT};
         margin-top: 10px;
         margin-bottom: 12px;
-    }
-    .jepp-header {
+    }}
+    .jepp-header {{
         font-size: 14px;
         font-weight: 700;
-        color: #0284C7;
-        border-bottom: 1px dashed rgba(128, 128, 128, 0.4);
+        color: {KM_AMBER};
+        border-bottom: 1px dashed rgba(255,255,255,0.15);
         padding-bottom: 4px;
         margin-bottom: 8px;
-    }
+    }}
 
-    .status-badge-ok {
-        background-color: rgba(16, 185, 129, 0.15);
-        color: #10B981;
-        border: 1px solid rgba(16, 185, 129, 0.3);
+    .status-badge-ok {{
+        background-color: rgba(52, 211, 153, 0.15);
+        color: {KM_GREEN};
+        border: 1px solid rgba(52, 211, 153, 0.3);
         padding: 4px 8px;
         border-radius: 4px;
         font-size: 11px;
-        font-weight: 600;
+        font-weight: 700;
         text-align: center;
-    }
-    .status-badge-warn {
-        background-color: rgba(245, 158, 11, 0.15);
-        color: #F59E0B;
-        border: 1px solid rgba(245, 158, 11, 0.3);
+    }}
+    .status-badge-warn {{
+        background-color: {KM_AMBER_DIM};
+        color: {KM_AMBER};
+        border: 1px solid rgba(245, 166, 35, 0.3);
         padding: 4px 8px;
         border-radius: 4px;
         font-size: 11px;
-        font-weight: 600;
+        font-weight: 700;
         text-align: center;
-    }
+    }}
 
-    .stButton>button {
-        background-color: #0284C7;
-        color: #FFFFFF;
-        border-radius: 6px;
-        font-weight: 600;
-        border: none;
+    /* Secondary (default) buttons — ghost/outline, e.g. + Add / - Remove */
+    .stButton>button {{
+        background-color: transparent;
+        color: {KM_TEXT};
+        border-radius: 7px;
+        font-weight: 700;
+        border: 1px solid {KM_BORDER};
         padding: 0.45rem 0.9rem;
         transition: all 0.15s ease;
-    }
-    .stButton>button:hover {
-        background-color: #0369A1;
-        color: #FFFFFF;
+    }}
+    .stButton>button:hover {{
+        border-color: {KM_AMBER};
+        color: {KM_AMBER};
+    }}
+    /* Primary buttons — solid amber CTA, e.g. Build Session Plan */
+    .stButton>button[kind="primary"] {{
+        background-color: {KM_AMBER};
+        color: #1A1206;
+        border: none;
+        font-weight: 800;
+        padding: 0.65rem 1rem;
+    }}
+    .stButton>button[kind="primary"]:hover {{
+        background-color: #ffb945;
+        color: #1A1206;
         transform: translateY(-1px);
-    }
-    .thin-divider {
+    }}
+    .thin-divider {{
         margin: 12px 0;
-        border-bottom: 1px solid rgba(128, 128, 128, 0.2);
-    }
-    .ref-badge {
+        border-bottom: 1px solid {KM_BORDER};
+    }}
+    .ref-badge {{
         font-size: 10.5px;
-        background-color: rgba(2, 132, 199, 0.15);
-        color: #0284C7;
+        background-color: {KM_AMBER_DIM};
+        color: {KM_AMBER};
         padding: 2px 6px;
         border-radius: 4px;
         margin-left: 6px;
-        font-weight: 600;
-        border: 1px solid rgba(2, 132, 199, 0.3);
-    }
+        font-weight: 700;
+        border: 1px solid rgba(245,166,35,0.3);
+    }}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("✈️ Simulator Session Plan & EBT Competency Optimizer")
-st.markdown("<p style='color: var(--text-color); opacity: 0.7; font-size: 14px; margin-top: -8px; font-weight: 500;'>KM Malta A320 STD2.2 / Advanced Evidence-Based Training (EBT) & CBTA / OPC / LPC IRR Suite</p>", unsafe_allow_html=True)
+# Reserved slot for the top app header. It's rendered later (once
+# candidate/session/data-source state actually exists), but st.empty()
+# keeps its position pinned here at the very top of the page regardless
+# of where in the script it's filled in — see the "render header" call
+# near the data-loading section below.
+header_placeholder = st.empty()
+
+for _k, _v in {
+    "fo_name": "F/O Unassigned",
+    "capt_name": "Capt. Unassigned",
+    "session_mode": "EBT Evaluation & Coaching",
+    "sim_id": "KM Malta A320 STD2.2",
+    "aircraft_type": "A320-214",
+    "program_code": "EBT-2026",
+    "session_duration_h": 4.0,
+}.items():
+    st.session_state.setdefault(_k, _v)
+
+SESSION_MODE_SHORT = {
+    "EBT Evaluation & Coaching": "EBT",
+    "EBT Line-Oriented Assessment": "LOE",
+    "Recurrent Check (LPC/OPC)": "OPC",
+}
 
 # ==========================================
 # CENTRALIZED DATA DICTIONARIES & PROGRAM MODULES
@@ -1410,13 +1737,13 @@ def build_competency_venn_svg(sets_dict):
 # tab_selector/tab_sql_schema elsewhere in this file.)
 # ==========================================
 tab_session, tab_env, tab_orca, tab_selector, tab_standard, tab_debrief, tab_history = st.tabs([
-    "⚙️ Session Setup", 
-    "🌐 Environment & IOS", 
-    "📋 OPC & ORCA Workflow",
-    "🎯 Scenario Selector",
-    "📐 Grading Standard",
-    "📊 Session Debrief",
-    "🗂️ Candidate History"
+    "SES · Session Setup",
+    "ENV · Environment & IOS",
+    "ORC · OPC & ORCA Workflow",
+    "SCN · Scenario Selector",
+    "GRD · Grading Standard",
+    "DBF · Session Debrief",
+    "HST · Candidate History"
 ])
 
 # SLOT CONFIGURATION & DATA SOURCES
@@ -1427,206 +1754,438 @@ tab_session, tab_env, tab_orca, tab_selector, tab_standard, tab_debrief, tab_his
 # permanently to a panel most tabs never touch.
 # ==========================================
 with tab_session:
-    with st.container(border=True):
-        st.markdown("#### 📍 Slot Configuration")
+    col_left, col_right = st.columns([2, 1])
 
-        if "slot_list" not in st.session_state:
-            st.session_state.slot_list = [
-                {"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False},
-                {"phase": 2, "dod": 2, "role": "PF Focus", "type": "Any", "mandatory": True},
-                {"phase": 6, "dod": 2, "role": "PM Focus", "type": "Any", "mandatory": False},
-                {"phase": 7, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False}
-            ]
+    with col_left:
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>SES</span><span class='panel-title-text'>Slot Configuration</span></div>", unsafe_allow_html=True)
 
-        btn_c1, btn_c2, btn_c3 = st.columns([1, 1, 4])
-        with btn_c1:
-            if st.button("➕ Add Slot", use_container_width=True):
-                if len(st.session_state.slot_list) < 12:
-                    st.session_state.slot_list.append({"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False})
-                    st.rerun()
-        with btn_c2:
-            if st.button("❌ Remove", use_container_width=True):
-                if len(st.session_state.slot_list) > 1:
-                    st.session_state.slot_list.pop()
-                    st.rerun()
+            if "slot_list" not in st.session_state:
+                st.session_state.slot_list = [
+                    {"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False},
+                    {"phase": 2, "dod": 2, "role": "PF Focus", "type": "Any", "mandatory": True},
+                    {"phase": 6, "dod": 2, "role": "PM Focus", "type": "Any", "mandatory": False},
+                    {"phase": 7, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False}
+                ]
 
-        hdr_cols = st.columns([0.5, 1.3, 0.8, 1.1, 1.5, 1.3, 1.6, 0.9])
-        for col, label in zip(hdr_cols, ["Slot", "Phase", "DOD", "Role", "Category", "ATA", "Competency", "Pin"]):
-            col.markdown(f"<div style='font-size:11px; opacity:0.65; font-weight:600;'>{label}</div>", unsafe_allow_html=True)
+            btn_c1, btn_c2, btn_c3 = st.columns([1, 1, 4])
+            with btn_c1:
+                if st.button("➕ Add", use_container_width=True):
+                    if len(st.session_state.slot_list) < 12:
+                        st.session_state.slot_list.append({"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False})
+                        st.rerun()
+            with btn_c2:
+                if st.button("➖ Remove", use_container_width=True):
+                    if len(st.session_state.slot_list) > 1:
+                        st.session_state.slot_list.pop()
+                        st.rerun()
 
-        slot_configurations = []
-        for i in range(len(st.session_state.slot_list)):
-            slot_data = st.session_state.slot_list[i]
-            row_cols = st.columns([0.5, 1.3, 0.8, 1.1, 1.5, 1.3, 1.6, 0.9])
-            with row_cols[0]:
-                st.markdown(f"<div style='padding-top:8px; font-weight:600;'>{i+1}</div>", unsafe_allow_html=True)
-            with row_cols[1]:
-                p_val = st.selectbox("Phase", options=ALL_PHASE_KEYS, index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0, format_func=lambda x: f"Ph {x}: {PHASE_NAMES[x].split('–')[1].strip()}", key=f"phase_sel_{i}", label_visibility="collapsed")
-            with row_cols[2]:
-                d_val = st.selectbox("DOD", options=[1, 2, 3], index=slot_data["dod"]-1, format_func=lambda x: f"DOD {x}", key=f"dod_sel_{i}", label_visibility="collapsed")
-            with row_cols[3]:
-                role_val = st.selectbox("Role", options=ROLE_OPTIONS, index=ROLE_OPTIONS.index(slot_data["role"]) if slot_data["role"] in ROLE_OPTIONS else 0, key=f"role_sel_{i}", label_visibility="collapsed")
-            with row_cols[4]:
-                type_val = st.selectbox("Category", options=["Any", "Technical Failure", "Non-Technical / CRM (Non-ATA)", "ATA Specific"], key=f"type_sel_{i}", label_visibility="collapsed")
-            with row_cols[5]:
-                ata_val = st.number_input("ATA Chapter", min_value=11, max_value=80, key=f"ata_sel_{i}", label_visibility="collapsed") if type_val == "ATA Specific" else None
-                if type_val != "ATA Specific":
-                    st.markdown("<div style='opacity:0.4; font-size:12px; padding-top:8px;'>—</div>", unsafe_allow_html=True)
-            with row_cols[6]:
-                comp_val = st.selectbox("Target Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key=f"comp_sel_{i}", label_visibility="collapsed")
-            with row_cols[7]:
-                is_mandatory = st.checkbox("Pin", value=slot_data.get("mandatory", False), key=f"mand_sel_{i}", label_visibility="collapsed")
+            hdr_cols = st.columns([0.5, 1.3, 0.8, 1.1, 1.5, 1.3, 1.6, 0.9])
+            for col, label in zip(hdr_cols, ["Slot", "Phase", "DOD", "Role", "Category", "ATA", "Competency", "Pin"]):
+                col.markdown(f"<div style='font-size:11px; opacity:0.65; font-weight:600;'>{label}</div>", unsafe_allow_html=True)
 
-            slot_configurations.append({"slot": i + 1, "phase": int(p_val), "dod": int(d_val), "role": role_val, "type": type_val, "ata": ata_val, "competency": comp_val, "mandatory": is_mandatory})
+            slot_configurations = []
+            for i in range(len(st.session_state.slot_list)):
+                slot_data = st.session_state.slot_list[i]
+                row_cols = st.columns([0.5, 1.3, 0.8, 1.1, 1.5, 1.3, 1.6, 0.9])
+                with row_cols[0]:
+                    st.markdown(f"<div style='padding-top:8px; font-weight:600;'>{i+1}</div>", unsafe_allow_html=True)
+                with row_cols[1]:
+                    p_val = st.selectbox("Phase", options=ALL_PHASE_KEYS, index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0, format_func=lambda x: f"Ph {x}: {PHASE_NAMES[x].split('–')[1].strip()}", key=f"phase_sel_{i}", label_visibility="collapsed")
+                with row_cols[2]:
+                    d_val = st.selectbox("DOD", options=[1, 2, 3], index=slot_data["dod"]-1, format_func=lambda x: f"DOD {x}", key=f"dod_sel_{i}", label_visibility="collapsed")
+                with row_cols[3]:
+                    role_val = st.selectbox("Role", options=ROLE_OPTIONS, index=ROLE_OPTIONS.index(slot_data["role"]) if slot_data["role"] in ROLE_OPTIONS else 0, key=f"role_sel_{i}", label_visibility="collapsed")
+                with row_cols[4]:
+                    type_val = st.selectbox("Category", options=["Any", "Technical Failure", "Non-Technical / CRM (Non-ATA)", "ATA Specific"], key=f"type_sel_{i}", label_visibility="collapsed")
+                with row_cols[5]:
+                    ata_val = st.number_input("ATA Chapter", min_value=11, max_value=80, key=f"ata_sel_{i}", label_visibility="collapsed") if type_val == "ATA Specific" else None
+                    if type_val != "ATA Specific":
+                        st.markdown("<div style='opacity:0.4; font-size:12px; padding-top:8px;'>—</div>", unsafe_allow_html=True)
+                with row_cols[6]:
+                    comp_val = st.selectbox("Target Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key=f"comp_sel_{i}", label_visibility="collapsed")
+                with row_cols[7]:
+                    is_mandatory = st.checkbox("Pin", value=slot_data.get("mandatory", False), key=f"mand_sel_{i}", label_visibility="collapsed")
 
-    with st.expander("📂 Data Sources (Scenarios.csv, Keypams.xlsx, Scenario OBs)", expanded=False):
-        uploaded_scen = st.file_uploader("Upload Scenarios.csv", type=["csv"])
-        uploaded_comp = st.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags.")
-        uploaded_scenario_obs = st.file_uploader("Upload Scenario_Observable_Behaviours.xlsx (optional)", type=["xlsx"], help="Per-event PTA and Observable Behaviours authored by your training team — takes priority over the generic ATA-family fallback for any event it covers.")
+                slot_configurations.append({"slot": i + 1, "phase": int(p_val), "dod": int(d_val), "role": role_val, "type": type_val, "ata": ata_val, "competency": comp_val, "mandatory": is_mandatory})
 
-    with st.expander("📚 Document References", expanded=False):
-        for tag, title in DOCUMENT_REFERENCES.items():
-            st.markdown(f"<div style='font-size: 11px; color: var(--text-color); opacity: 0.75; margin-bottom: 2px;'><b>[{tag}]</b> {title}</div>", unsafe_allow_html=True)
-        st.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v5.0 2026</div>", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>SES</span><span class='panel-title-text'>Session Metadata & Device Setup</span></div>", unsafe_allow_html=True)
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            with m_col1:
+                session_mode = st.selectbox("Training Focus / Mode", ["EBT Evaluation & Coaching", "EBT Line-Oriented Assessment", "Recurrent Check (LPC/OPC)"], key="session_mode")
+            with m_col2:
+                capt_name = st.text_input("Captain Name", key="capt_name")
+                capt_staff_no = st.text_input("Captain Staff No.", value="", placeholder="e.g. KM10234", help="Used to match this candidate's record across sessions in the history database — a name alone isn't reliable for that (typos, duplicates).")
+            with m_col3:
+                fo_name = st.text_input("First Officer Name", key="fo_name")
+                fo_staff_no = st.text_input("F/O Staff No.", value="", placeholder="e.g. KM10567")
+            with m_col4:
+                sim_id = st.text_input("Sim / Device ID", key="sim_id")
 
-# ==========================================
-# DATA LOADING FUNCTION
-# ==========================================
-def resource_path(relative_path):
-    try: base_path = sys._MEIPASS
-    except Exception: base_path = os.path.dirname(os.path.abspath(__file__))
-    local_path = os.path.join(base_path, relative_path)
-    if os.path.exists(local_path): return local_path
-    parent_path = os.path.join(os.path.dirname(base_path), relative_path)
-    return parent_path if os.path.exists(parent_path) else local_path
+            p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+            with p_col1:
+                aircraft_type = st.text_input("Aircraft Type", key="aircraft_type")
+            with p_col2:
+                program_code = st.text_input("Program", key="program_code")
+            with p_col3:
+                session_duration_h = st.number_input("Duration (h)", min_value=0.5, max_value=12.0, step=0.5, key="session_duration_h")
+            with p_col4:
+                max_dod_threshold = st.number_input("Total DOD Ceiling", min_value=1, max_value=30, value=6, step=1)
+            allow_fallback = st.checkbox("Enable Smart Fallback (use closest available DOD if exact match missing)", value=True)
 
+        ds_col, doc_col = st.columns(2)
+        with ds_col:
+            with st.container(border=True):
+                st.markdown("<div class='panel-head'><span class='panel-code'>CSV</span><span class='panel-title-text'>Data Sources</span></div>", unsafe_allow_html=True)
+                uploaded_scen = st.file_uploader("Scenarios.csv", type=["csv"], label_visibility="collapsed")
+                uploaded_comp = st.file_uploader("Keypams.xlsx (optional)", type=["xlsx"], label_visibility="collapsed", help="Per-event competency flags.")
+                uploaded_scenario_obs = st.file_uploader("Scenario_Observable_Behaviours.xlsx (optional)", type=["xlsx"], label_visibility="collapsed", help="Per-event PTA and Observable Behaviours authored by your training team — takes priority over the generic ATA-family fallback for any event it covers.")
+                ds_status_placeholder = st.empty()
+        with doc_col:
+            with st.container(border=True):
+                st.markdown("<div class='panel-head'><span class='panel-code'>DOC</span><span class='panel-title-text'>Document References</span></div>", unsafe_allow_html=True)
+                for tag, title in DOCUMENT_REFERENCES.items():
+                    st.markdown(f"<div class='doc-ref-row'><span class='doc-ref-tag'>[{tag}]</span> {title}</div>", unsafe_allow_html=True)
+                st.markdown("<div style='text-align: left; font-size: 10.5px; color: rgba(255,255,255,0.35); margin-top: 10px;'>Designed by Shawn Abela · v5.0 2026</div>", unsafe_allow_html=True)
 
-def find_bundled_file(candidate_names):
-    """Check each candidate filename (in order) next to the script and
-    return the first one that actually exists. Used so a working file
-    doesn't have to be renamed exactly to auto-load — e.g. the
-    Scenario_Observable_Behaviours template still gets picked up whether
-    it's saved with or without a '_TEMPLATE' suffix."""
-    for name in candidate_names:
-        path = resource_path(name)
-        if os.path.exists(path):
-            return path
-    return None
+    # ==========================================
+    # DATA SOURCE RESOLUTION & SCENARIO DATABASE LOADING
+    # Runs here — inside col_left's part of this tab, after the
+    # file_uploader widgets above, and before col_right below — because
+    # the Session Summary / Competency Coverage / Generate panels on the
+    # right all need `df` to exist first.
+    # ==========================================
+    def resource_path(relative_path):
+        try: base_path = sys._MEIPASS
+        except Exception: base_path = os.path.dirname(os.path.abspath(__file__))
+        local_path = os.path.join(base_path, relative_path)
+        if os.path.exists(local_path): return local_path
+        parent_path = os.path.join(os.path.dirname(base_path), relative_path)
+        return parent_path if os.path.exists(parent_path) else local_path
 
+    def find_bundled_file(candidate_names):
+        """Check each candidate filename (in order) next to the script and
+        return the first one that actually exists. Used so a working file
+        doesn't have to be renamed exactly to auto-load — e.g. the
+        Scenario_Observable_Behaviours template still gets picked up whether
+        it's saved with or without a '_TEMPLATE' suffix."""
+        for name in candidate_names:
+            path = resource_path(name)
+            if os.path.exists(path):
+                return path
+        return None
 
-scenarios_source = uploaded_scen if uploaded_scen is not None else (find_bundled_file(["Scenarios.csv"]) or resource_path("Scenarios.csv"))
-competency_source = uploaded_comp if uploaded_comp is not None else find_bundled_file(["Keypams.xlsx"])
-scenario_obs_source = uploaded_scenario_obs if uploaded_scenario_obs is not None else find_bundled_file([
-    "Scenario_Observable_Behaviours.xlsx",
-    "Scenario_Observable_Behaviours_TEMPLATE.xlsx",
-])
+    def source_display_name(source):
+        """Best-effort human-readable filename for a 'source' value that may be
+        a Streamlit UploadedFile (has a .name attribute, not path-like), a
+        plain path string/Path from find_bundled_file/resource_path, or None.
+        os.path.basename() alone only handles the string/Path case and raises
+        TypeError on an UploadedFile — this covers all three cases."""
+        if source is None:
+            return None
+        name = getattr(source, "name", None)
+        if name:
+            return os.path.basename(name)
+        return os.path.basename(str(source))
 
-if scenario_obs_source is not None:
-    SCENARIO_OB_LIBRARY, scenario_obs_err = load_scenario_obs_library(scenario_obs_source)
-    with tab_session:
+    scenarios_source = uploaded_scen if uploaded_scen is not None else (find_bundled_file(["Scenarios.csv"]) or resource_path("Scenarios.csv"))
+    competency_source = uploaded_comp if uploaded_comp is not None else find_bundled_file(["Keypams.xlsx"])
+    scenario_obs_source = uploaded_scenario_obs if uploaded_scenario_obs is not None else find_bundled_file([
+        "Scenario_Observable_Behaviours.xlsx",
+        "Scenario_Observable_Behaviours_TEMPLATE.xlsx",
+    ])
+
+    if scenario_obs_source is not None:
+        SCENARIO_OB_LIBRARY, scenario_obs_err = load_scenario_obs_library(scenario_obs_source)
         if scenario_obs_err:
-            st.warning(f"Could not read {os.path.basename(scenario_obs_source)}: {scenario_obs_err}")
-        elif SCENARIO_OB_LIBRARY:
-            st.success(f"✓ {len(SCENARIO_OB_LIBRARY)} scenario-specific OB profile(s) auto-loaded from `{os.path.basename(scenario_obs_source)}`.")
+            st.warning(f"Could not read {source_display_name(scenario_obs_source)}: {scenario_obs_err}")
 
-@st.cache_data(show_spinner="Loading and caching matrix scenarios...")
-def load_scenario_database(s_source, c_source):
-    try:
-        df_raw = pd.read_csv(s_source, encoding="cp1252") if os.path.exists(str(s_source)) or hasattr(s_source, 'read') else pd.read_csv(s_source, encoding="utf-8")
-        df_raw.columns = [str(c).strip() for c in df_raw.columns]
-        while len(df_raw.columns) < 10: df_raw[f"Col_{len(df_raw.columns)}"] = None
+    @st.cache_data(show_spinner="Loading and caching matrix scenarios...")
+    def load_scenario_database(s_source, c_source):
+        try:
+            df_raw = pd.read_csv(s_source, encoding="cp1252") if os.path.exists(str(s_source)) or hasattr(s_source, 'read') else pd.read_csv(s_source, encoding="utf-8")
+            df_raw.columns = [str(c).strip() for c in df_raw.columns]
+            while len(df_raw.columns) < 10: df_raw[f"Col_{len(df_raw.columns)}"] = None
 
-        records = []
-        for idx, row in df_raw.iterrows():
-            event, dod, ata = row.iloc[0], row.iloc[1], row.get('ATA', None)
-            if pd.isna(event) or pd.isna(dod) or len(str(event).strip()) <= 2: continue
-            for p_idx, col_idx in enumerate(range(2, 10)):
-                if col_idx < len(row):
-                    val = row.iloc[col_idx]
-                    if pd.notna(val) and str(val).strip() != "":
-                        records.append({"EVENT": str(event).strip(), "DOD": int(float(dod)), "PHASES": p_idx + 1, "ATA": int(float(ata)) if pd.notna(ata) else None, "DURATION": 15})
-        df = pd.DataFrame(records)
-        df["scenario_id"] = [f"SC-{i+1:02d}" for i in range(len(df))]
+            records = []
+            for idx, row in df_raw.iterrows():
+                event, dod, ata = row.iloc[0], row.iloc[1], row.get('ATA', None)
+                if pd.isna(event) or pd.isna(dod) or len(str(event).strip()) <= 2: continue
+                for p_idx, col_idx in enumerate(range(2, 10)):
+                    if col_idx < len(row):
+                        val = row.iloc[col_idx]
+                        if pd.notna(val) and str(val).strip() != "":
+                            records.append({"EVENT": str(event).strip(), "DOD": int(float(dod)), "PHASES": p_idx + 1, "ATA": int(float(ata)) if pd.notna(ata) else None, "DURATION": 15})
+            df = pd.DataFrame(records)
+            df["scenario_id"] = [f"SC-{i+1:02d}" for i in range(len(df))]
 
-        match_stats = {"keypams_loaded": False, "matched_events": 0, "total_events": df["EVENT"].nunique() if not df.empty else 0}
+            match_stats = {"keypams_loaded": False, "matched_events": 0, "total_events": df["EVENT"].nunique() if not df.empty else 0}
 
-        comp_lookup = {}
-        if c_source is not None:
-            try:
-                df_comp = pd.read_excel(c_source)
-                df_comp.columns = [str(c).strip() for c in df_comp.columns]
-                if "SA" in df_comp.columns and "SAW" not in df_comp.columns:
-                    df_comp = df_comp.rename(columns={"SA": "SAW"})
-                comp_cols = [c for c in COMPETENCY_KEYS.keys() if c in df_comp.columns]
-                if comp_cols and "Event" in df_comp.columns:
-                    for _, crow in df_comp.iterrows():
-                        k_event = str(crow["Event"])
-                        norm_k = _normalize_event_name(k_event)
-                        active_comps = [c for c in comp_cols if pd.notna(crow[c]) and float(crow[c]) >= 1]
-                        comp_lookup[norm_k] = active_comps
-                    match_stats["keypams_loaded"] = True
-            except Exception:
-                pass
+            comp_lookup = {}
+            if c_source is not None:
+                try:
+                    df_comp = pd.read_excel(c_source)
+                    df_comp.columns = [str(c).strip() for c in df_comp.columns]
+                    if "SA" in df_comp.columns and "SAW" not in df_comp.columns:
+                        df_comp = df_comp.rename(columns={"SA": "SAW"})
+                    comp_cols = [c for c in COMPETENCY_KEYS.keys() if c in df_comp.columns]
+                    if comp_cols and "Event" in df_comp.columns:
+                        for _, crow in df_comp.iterrows():
+                            k_event = str(crow["Event"])
+                            norm_k = _normalize_event_name(k_event)
+                            active_comps = [c for c in comp_cols if pd.notna(crow[c]) and float(crow[c]) >= 1]
+                            comp_lookup[norm_k] = active_comps
+                        match_stats["keypams_loaded"] = True
+                except Exception:
+                    pass
 
-        norm_keys = list(comp_lookup.keys())
-        matched_events = set()
+            norm_keys = list(comp_lookup.keys())
+            matched_events = set()
 
-        def resolve_competencies(ev, phase, ata):
-            codes = set()
-            ev_upper = str(ev).replace("\xa0", " ").upper()
-            for ex_key, ex_data in PROGRAM_SYLLABUS_EXERCISES.items():
-                if ex_key == "EX-00_GENERIC":
+            def resolve_competencies(ev, phase, ata):
+                codes = set()
+                ev_upper = str(ev).replace("\xa0", " ").upper()
+                for ex_key, ex_data in PROGRAM_SYLLABUS_EXERCISES.items():
+                    if ex_key == "EX-00_GENERIC":
+                        continue
+                    if any(kw in ev_upper for kw in ex_data["keywords"]):
+                        codes.update(ex_data["cbta_focus"])
+                if codes:
+                    return sorted(codes)
+
+                # A training-team-authored scenario-specific entry is more
+                # authoritative than the blunter Keypams.xlsx flags, so it's
+                # checked before Keypams, not after.
+                if SCENARIO_OB_LIBRARY:
+                    norm_ev_lib = _normalize_event_name(ev)
+                    lib_entry = SCENARIO_OB_LIBRARY.get(norm_ev_lib)
+                    if lib_entry is None:
+                        close_lib = difflib.get_close_matches(norm_ev_lib, list(SCENARIO_OB_LIBRARY.keys()), n=1, cutoff=0.72)
+                        if close_lib:
+                            lib_entry = SCENARIO_OB_LIBRARY[close_lib[0]]
+                    if lib_entry:
+                        return sorted(lib_entry["cbta_focus"])
+
+                if comp_lookup:
+                    norm_ev = _normalize_event_name(ev)
+                    hit = comp_lookup.get(norm_ev)
+                    if hit is None:
+                        tokens_ev = set(norm_ev.split())
+                        for k in norm_keys:
+                            tokens_k = set(k.split())
+                            if len(tokens_ev & tokens_k) >= 2 and len(tokens_ev & tokens_k) / max(len(tokens_ev), len(tokens_k)) > 0.45:
+                                hit = comp_lookup[k]
+                                break
+                    if hit is None:
+                        close = difflib.get_close_matches(norm_ev, norm_keys, n=1, cutoff=0.5)
+                        if close:
+                            hit = comp_lookup[close[0]]
+                    if hit:
+                        matched_events.add(ev)
+                        codes.update(hit)
+                if codes:
+                    return sorted(codes)
+                # No keyword, scenario-library, or Keypams match — fall back to
+                # the ATA-chapter family generic (more specific than the fully
+                # generic set) when the event's ATA chapter maps to one.
+                _, _, fallback_focus = get_exercise_for_event(ev, ata)
+                return sorted(fallback_focus)
+
+            df["COMPETENCIES"] = df.apply(lambda r: resolve_competencies(r["EVENT"], r["PHASES"], r.get("ATA")), axis=1)
+            match_stats["matched_events"] = len(matched_events)
+            return df, match_stats
+        except Exception as e:
+            return None, str(e)
+
+    df, match_stats = load_scenario_database(scenarios_source, competency_source)
+
+    def _source_tag(source, uploaded_widget_value):
+        if uploaded_widget_value is not None:
+            return "uploaded this session"
+        if source is not None:
+            return f"auto-loaded from `{source_display_name(source)}`"
+        return "not supplied"
+
+    with ds_status_placeholder.container():
+        # load_scenario_database() returns (None, "<error string>") on
+        # failure (e.g. Scenarios.csv missing/unreadable) — match_stats is
+        # only guaranteed to be a dict when df loaded successfully, so
+        # every status line below must guard on that first.
+        #
+        # The ver26 redesign collapsed this to a bare LOADED/OPTIONAL flag
+        # per source, dropping the actual counts/match-rate detail that
+        # used to be shown (row counts, Keypams match %, OB profile count)
+        # — restoring that detail as a second line under each status row,
+        # since it's genuinely useful diagnostic info (e.g. a low Keypams
+        # match % usually means an event-naming mismatch worth checking).
+        scen_ok = df is not None and not df.empty
+        scen_status = "LOADED" if scen_ok else "MISSING"
+        scen_cls = "ds-status-loaded" if scen_ok else "ds-status-optional"
+        st.markdown(f"<div class='ds-row'><span>Scenarios.csv</span><span class='{scen_cls}'>{scen_status}</span></div>", unsafe_allow_html=True)
+        if scen_ok:
+            st.markdown(f"<div class='ds-detail'>{len(df)} scenario/phase rows</div>", unsafe_allow_html=True)
+        elif isinstance(match_stats, str):
+            st.caption(f"⚠️ {match_stats}")
+
+        comp_status = "LOADED" if (scen_ok and match_stats.get("keypams_loaded")) else "OPTIONAL"
+        comp_cls = "ds-status-loaded" if comp_status == "LOADED" else "ds-status-optional"
+        st.markdown(f"<div class='ds-row'><span>Keypams.xlsx</span><span class='{comp_cls}'>{comp_status}</span></div>", unsafe_allow_html=True)
+        if comp_status == "LOADED":
+            _total = match_stats.get("total_events", 0)
+            _matched = match_stats.get("matched_events", 0)
+            _pct = (_matched / _total * 100) if _total else 0
+            st.markdown(f"<div class='ds-detail'>cross-matched {_matched}/{_total} events ({_pct:.0f}%)</div>", unsafe_allow_html=True)
+
+        obs_status = "LOADED" if (scenario_obs_source is not None and SCENARIO_OB_LIBRARY) else "OPTIONAL"
+        obs_cls = "ds-status-loaded" if obs_status == "LOADED" else "ds-status-optional"
+        st.markdown(f"<div class='ds-row'><span>Scenario_Observable_Behaviours.xlsx</span><span class='{obs_cls}'>{obs_status}</span></div>", unsafe_allow_html=True)
+        if obs_status == "LOADED":
+            st.markdown(f"<div class='ds-detail'>{len(SCENARIO_OB_LIBRARY)} scenario-specific profile(s)</div>", unsafe_allow_html=True)
+
+        st.caption(f"Scenarios: {_source_tag(scenarios_source, uploaded_scen)} · Keypams: {_source_tag(competency_source, uploaded_comp)} · Scenario OBs: {_source_tag(scenario_obs_source, uploaded_scenario_obs)}")
+
+    with col_right:
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>SUM</span><span class='panel-title-text'>Session Summary</span></div>", unsafe_allow_html=True)
+            mandatory_count = sum(1 for c in slot_configurations if c.get("mandatory"))
+            dur_h = float(st.session_state.session_duration_h)
+            dur_str = f"{int(dur_h):02d}:{int(round((dur_h % 1) * 60)):02d} h"
+            sum_c1, sum_c2 = st.columns(2)
+            with sum_c1:
+                st.markdown(f"<div class='stat-label'>Slots</div><div class='stat-value stat-value-accent'>{len(slot_configurations)} / 12</div>", unsafe_allow_html=True)
+            with sum_c2:
+                st.markdown(f"<div class='stat-label'>Mandatory</div><div class='stat-value stat-value-green'>{mandatory_count:02d}</div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            sum_c3, sum_c4 = st.columns(2)
+            with sum_c3:
+                st.markdown(f"<div class='stat-label'>Aircraft</div><div class='stat-value'>{st.session_state.aircraft_type}</div>", unsafe_allow_html=True)
+            with sum_c4:
+                st.markdown(f"<div class='stat-label'>Program</div><div class='stat-value'>{st.session_state.program_code}</div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+            sum_c5, sum_c6 = st.columns(2)
+            with sum_c5:
+                st.markdown(f"<div class='stat-label'>Session Type</div><div class='stat-value stat-value-accent'>{SESSION_MODE_SHORT.get(st.session_state.session_mode, st.session_state.session_mode)}</div>", unsafe_allow_html=True)
+            with sum_c6:
+                st.markdown(f"<div class='stat-label'>Duration</div><div class='stat-value'>{dur_str}</div>", unsafe_allow_html=True)
+
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>COV</span><span class='panel-title-text'>Competency Coverage</span></div>", unsafe_allow_html=True)
+            # Previously sourced from each slot's 'Target Competency' filter
+            # dropdown — which most slots leave on "Any", so badges barely
+            # lit regardless of what was actually generated. Now sourced
+            # from the real per-event COMPETENCIES (resolve_competencies())
+            # of the generated session when one exists, falling back to the
+            # filter-based preview only before a plan has been built.
+            _generated_df = st.session_state.get("final_df")
+            if _generated_df is not None and not _generated_df.empty and "COMPETENCIES" in _generated_df.columns:
+                active_comps = set()
+                for codes in _generated_df["COMPETENCIES"]:
+                    if isinstance(codes, (list, tuple, set)):
+                        active_comps.update(codes)
+                coverage_note = f"{len(active_comps)} of 9 core competencies actually targeted by the {len(_generated_df)} scenario(s) in the built session."
+            else:
+                active_comps = {c["competency"] for c in slot_configurations if c.get("competency") and c["competency"] != "Any"}
+                coverage_note = f"{len(active_comps)} of 9 core competencies pinned via slot filters so far — build the session plan to see real per-scenario coverage."
+            comp_order = ["APK", "COM", "FPA", "FPM", "KNO", "LTW", "PSD", "SAW", "WLM"]
+            badges_html = "".join(
+                f"<span class='comp-badge {'comp-badge-active' if code in active_comps else 'comp-badge-inactive'}' "
+                f"title='{COMPETENCY_KEYS.get(code, code)}'>{code}</span>"
+                for code in comp_order
+            )
+            st.markdown(f"<div>{badges_html}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:11px; color:{KM_TEXT_MUTED}; margin-top:8px;'>{coverage_note}</div>", unsafe_allow_html=True)
+
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>GEN</span><span class='panel-title-text'>Generate</span></div>", unsafe_allow_html=True)
+            if st.button("📄  Build Session Plan", type="primary", use_container_width=True):
+                st.session_state.trigger_generation = True
+
+    if st.session_state.get("trigger_generation", False):
+        if df is None or df.empty:
+            st.session_state.trigger_generation = False
+            st.warning("Can't build a session plan — Scenarios.csv isn't loaded. Upload it in Data Sources above, or check the auto-load status there.")
+        else:
+            selected_events = []
+            used_titles = set()
+            for cfg in slot_configurations:
+                if cfg.get("mandatory") and cfg["phase"] == 2:
+                    forced_match = df[(df["PHASES"] == 2) & (df["DOD"] == cfg["dod"])]
+                    if not forced_match.empty:
+                        picked = forced_match.iloc[0].to_dict()
+                    else:
+                        picked = {"EVENT": "Engine Failure After V1 (SIM-EFATO-01)", "DOD": cfg["dod"], "PHASES": 2, "scenario_id": "SC-FORCED", "COMPETENCIES": ["FPM", "APK", "PSD"]}
+                    picked["SLOT"] = cfg["slot"]
+                    picked["ROLE"] = cfg["role"]
+                    picked["PHASE_NAME"] = PHASE_NAMES[cfg["phase"]]
+                    selected_events.append(picked)
+                    used_titles.add(picked["EVENT"])
                     continue
-                if any(kw in ev_upper for kw in ex_data["keywords"]):
-                    codes.update(ex_data["cbta_focus"])
-            if codes:
-                return sorted(codes)
 
-            # A training-team-authored scenario-specific entry is more
-            # authoritative than the blunter Keypams.xlsx flags, so it's
-            # checked before Keypams, not after.
-            if SCENARIO_OB_LIBRARY:
-                norm_ev_lib = _normalize_event_name(ev)
-                lib_entry = SCENARIO_OB_LIBRARY.get(norm_ev_lib)
-                if lib_entry is None:
-                    close_lib = difflib.get_close_matches(norm_ev_lib, list(SCENARIO_OB_LIBRARY.keys()), n=1, cutoff=0.72)
-                    if close_lib:
-                        lib_entry = SCENARIO_OB_LIBRARY[close_lib[0]]
-                if lib_entry:
-                    return sorted(lib_entry["cbta_focus"])
+                cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
+                cands = apply_category_filter(cands, cfg)
+                cands = apply_competency_filter(cands, cfg.get("competency", "Any"))
+                if cands.empty and allow_fallback:
+                    cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
+                if not cands.empty:
+                    picked = cands.sample(n=1).iloc[0].to_dict()
+                    picked["SLOT"] = cfg["slot"]
+                    picked["ROLE"] = cfg["role"]
+                    picked["PHASE_NAME"] = PHASE_NAMES[cfg["phase"]]
+                    selected_events.append(picked)
+                    used_titles.add(picked["EVENT"])
+            st.session_state.final_df = pd.DataFrame(selected_events).sort_values("SLOT").reset_index(drop=True)
+            st.session_state.slot_overrides = {}
+            st.session_state.slot_competencies = {}
+            st.session_state.trigger_generation = False
+            st.session_state.db_session_id = None  # a freshly generated profile is a new history record, not an update to the last one
+            st.session_state.just_generated = True  # shown once on the rerun below, then cleared
+            # The Competency Coverage panel above reads st.session_state.final_df,
+            # but it's rendered EARLIER in script order than this block (Streamlit
+            # runs top-to-bottom on every interaction) — so on the very click that
+            # builds the plan, that panel still saw the old/empty final_df and
+            # showed 0/9. Forcing an immediate rerun means the next pass renders
+            # the panel with final_df already populated, instead of only catching
+            # up on some later, unrelated interaction.
+            st.rerun()
 
-            if comp_lookup:
-                norm_ev = _normalize_event_name(ev)
-                hit = comp_lookup.get(norm_ev)
-                if hit is None:
-                    tokens_ev = set(norm_ev.split())
-                    for k in norm_keys:
-                        tokens_k = set(k.split())
-                        if len(tokens_ev & tokens_k) >= 2 and len(tokens_ev & tokens_k) / max(len(tokens_ev), len(tokens_k)) > 0.45:
-                            hit = comp_lookup[k]
-                            break
-                if hit is None:
-                    close = difflib.get_close_matches(norm_ev, norm_keys, n=1, cutoff=0.5)
-                    if close:
-                        hit = comp_lookup[close[0]]
-                if hit:
-                    matched_events.add(ev)
-                    codes.update(hit)
-            if codes:
-                return sorted(codes)
-            # No keyword, scenario-library, or Keypams match — fall back to
-            # the ATA-chapter family generic (more specific than the fully
-            # generic set) when the event's ATA chapter maps to one.
-            _, _, fallback_focus = get_exercise_for_event(ev, ata)
-            return sorted(fallback_focus)
+    if st.session_state.pop("just_generated", False):
+        st.success("Session Profile Generated!")
 
-        df["COMPETENCIES"] = df.apply(lambda r: resolve_competencies(r["EVENT"], r["PHASES"], r.get("ATA")), axis=1)
-        match_stats["matched_events"] = len(matched_events)
-        return df, match_stats
-    except Exception as e:
-        return None, str(e)
-
-df, match_stats = load_scenario_database(scenarios_source, competency_source)
+    # ---- Render the top header now that session/candidate/data-source
+    # state actually exists (header_placeholder was created at the very
+    # top of the script, before any of this was known — see PAGE CONFIG
+    # & DASHBOARD THEME section). ----
+    _data_ok = df is not None and not df.empty
+    _draft_active = ("final_df" in st.session_state) and not st.session_state.get("db_session_id")
+    _synced_active = bool(st.session_state.get("db_session_id"))
+    _session_label = f"S-{st.session_state['db_session_id']}" if st.session_state.get("db_session_id") else "DRAFT"
+    header_placeholder.markdown(f"""
+    <div class="km-header">
+        <div class="km-header-left">
+            <div class="km-logo">✈️</div>
+            <div>
+                <div class="km-title">EBT SESSION OPTIMIZER</div>
+                <div class="km-subtitle">A320 · Evidence-Based Training · Competency Planner</div>
+            </div>
+        </div>
+        <div class="km-header-right">
+            <div class="km-meta">
+                <div class="km-meta-label">Session</div>
+                <div class="km-meta-value km-meta-value-accent">{_session_label}</div>
+            </div>
+            <div class="km-meta">
+                <div class="km-meta-label">Candidate</div>
+                <div class="km-meta-value">{st.session_state.fo_name}</div>
+            </div>
+            <div class="km-pills">
+                <div class="km-pill"><span class="km-dot {'km-dot-green' if _data_ok else 'km-dot-gray'}"></span>DATA</div>
+                <div class="km-pill"><span class="km-dot {'km-dot-amber' if _draft_active else 'km-dot-gray'}"></span>DRAFT</div>
+                <div class="km-pill"><span class="km-dot {'km-dot-green' if _synced_active else 'km-dot-gray'}"></span>SYNCED</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_dod, max_dod, mode, capt, fo, sim_id_val, ios_info):
     buffer = io.BytesIO()
@@ -1696,36 +2255,11 @@ def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_
     return buffer
 
 # ==========================================
-# DATA LOAD STATUS — one unified banner for all three data sources, so
-# it's clear at a glance which are actually active and whether each came
-# from an auto-detected bundled file or a manual upload, rather than three
-# scattered messages an instructor has to hunt for across tabs.
+# (Former standalone data-source status banner removed — this info
+# now lives in the Session Setup > Data Sources panel above, with its
+# own LOADED/OPTIONAL pill per file, computed right where the panel
+# is rendered.)
 # ==========================================
-def _source_tag(source, uploaded_widget_value):
-    if uploaded_widget_value is not None:
-        return "uploaded this session"
-    if source is not None:
-        return f"auto-loaded from `{os.path.basename(source)}`"
-    return "not supplied"
-
-if df is not None:
-    lines = []
-    lines.append(f"<div style='font-size:12.5px; margin-bottom:2px;'><b>Scenarios.csv</b> — {len(df)} scenario/phase rows ({_source_tag(scenarios_source, uploaded_scen)})</div>")
-
-    if match_stats.get("keypams_loaded"):
-        pct = (match_stats["matched_events"] / match_stats["total_events"] * 100) if match_stats["total_events"] else 0
-        lines.append(f"<div style='font-size:12.5px; margin-bottom:2px;'><b>Keypams.xlsx</b> — cross-matched {match_stats['matched_events']}/{match_stats['total_events']} events ({pct:.0f}%), {_source_tag(competency_source, uploaded_comp)}</div>")
-    else:
-        lines.append("<div style='font-size:12.5px; margin-bottom:2px;'><b>Keypams.xlsx</b> — not supplied; competencies derived from each event's own syllabus keyword match / generic fallback only</div>")
-
-    if scenario_obs_source is not None and SCENARIO_OB_LIBRARY:
-        lines.append(f"<div style='font-size:12.5px;'><b>Scenario Observable Behaviours</b> — {len(SCENARIO_OB_LIBRARY)} scenario-specific profile(s), {_source_tag(scenario_obs_source, uploaded_scenario_obs)}</div>")
-    else:
-        lines.append("<div style='font-size:12.5px;'><b>Scenario Observable Behaviours</b> — not supplied; falls back to ATA-family/generic OB sets</div>")
-
-    overall_ok = match_stats.get("keypams_loaded") and scenario_obs_source is not None
-    badge_cls = "status-badge-ok" if overall_ok else "status-badge-warn"
-    st.markdown(f"<div class='{badge_cls}'>{''.join(lines)}</div>", unsafe_allow_html=True)
 
 with tab_history:
     st.markdown("#### 🗂️ Candidate Session History")
@@ -1863,7 +2397,7 @@ with tab_env:
         st.markdown(f"""
         <div class="ios-card" style="border-left: 3px solid #0284C7;">
             <div class="ios-label">Live METAR Feed ({apt_data['icao']})</div>
-            <div style="font-family: monospace; color: #0284C7; font-size: 13px; margin-top: 4px;">{live_metar_str}</div>
+            <div style="font-family: 'Geist Mono', monospace; color: #0284C7; font-size: 13px; margin-top: 4px;">{live_metar_str}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1909,68 +2443,10 @@ if df is not None:
     df["TEM_THREAT"], df["TEM_ERROR"] = zip(*df.apply(lambda r: derive_tem_tags(r["EVENT"], r["PHASES"], wind_spd, wind_gust, rcam_code, vis_rvr_str), axis=1))
 
 with tab_session:
-    with st.container(border=True):
-        st.markdown("#### ⚙️ Session Metadata & Device Setup")
-        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        with m_col1:
-            session_mode = st.selectbox("Training Focus / Mode", ["EBT Evaluation & Coaching", "EBT Line-Oriented Assessment", "Recurrent Check (LPC/OPC)"])
-        with m_col2:
-            capt_name = st.text_input("Captain Name", value="Capt. Unassigned")
-            capt_staff_no = st.text_input("Captain Staff No.", value="", placeholder="e.g. KM10234", help="Used to match this candidate's record across sessions in the history database — a name alone isn't reliable for that (typos, duplicates).")
-        with m_col3:
-            fo_name = st.text_input("First Officer Name", value="F/O Unassigned")
-            fo_staff_no = st.text_input("F/O Staff No.", value="", placeholder="e.g. KM10567")
-        with m_col4:
-            sim_id = st.text_input("Sim / Device ID", value="KM Malta A320 STD2.2")
-
-        p_col1, p_col2 = st.columns([1.5, 3.5])
-        with p_col1:
-            max_dod_threshold = st.number_input("Total DOD Ceiling", min_value=1, max_value=30, value=6, step=1)
-        with p_col2:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            allow_fallback = st.checkbox("Enable Smart Fallback (use closest available DOD if exact match missing)", value=True)
-
-    with st.container(border=True):
-        st.markdown("#### ⚡ Scenario Generator & Program Suite")
-        st.markdown("Configure your slot parameters via the sidebar on the left, then generate the sequenced simulator session and EBT competency rubric below.")
-        if st.button("⚡ Generate Simulator Profile", type="primary", use_container_width=True):
-            st.session_state.trigger_generation = True
-
-    if st.session_state.get("trigger_generation", False):
-        selected_events = []
-        used_titles = set()
-        for cfg in slot_configurations:
-            if cfg.get("mandatory") and cfg["phase"] == 2:
-                forced_match = df[(df["PHASES"] == 2) & (df["DOD"] == cfg["dod"])]
-                if not forced_match.empty:
-                    picked = forced_match.iloc[0].to_dict()
-                else:
-                    picked = {"EVENT": "Engine Failure After V1 (SIM-EFATO-01)", "DOD": cfg["dod"], "PHASES": 2, "scenario_id": "SC-FORCED", "COMPETENCIES": ["FPM", "APK", "PSD"]}
-                picked["SLOT"] = cfg["slot"]
-                picked["ROLE"] = cfg["role"]
-                picked["PHASE_NAME"] = PHASE_NAMES[cfg["phase"]]
-                selected_events.append(picked)
-                used_titles.add(picked["EVENT"])
-                continue
-
-            cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
-            cands = apply_category_filter(cands, cfg)
-            cands = apply_competency_filter(cands, cfg.get("competency", "Any"))
-            if cands.empty and allow_fallback:
-                cands = df[(df["PHASES"] == cfg["phase"]) & (df["DOD"] == cfg["dod"]) & (~df["EVENT"].isin(used_titles))]
-            if not cands.empty:
-                picked = cands.sample(n=1).iloc[0].to_dict()
-                picked["SLOT"] = cfg["slot"]
-                picked["ROLE"] = cfg["role"]
-                picked["PHASE_NAME"] = PHASE_NAMES[cfg["phase"]]
-                selected_events.append(picked)
-                used_titles.add(picked["EVENT"])
-        st.session_state.final_df = pd.DataFrame(selected_events).sort_values("SLOT").reset_index(drop=True)
-        st.session_state.slot_overrides = {}
-        st.session_state.slot_competencies = {}
-        st.session_state.trigger_generation = False
-        st.session_state.db_session_id = None  # a freshly generated profile is a new history record, not an update to the last one
-        st.success("Session Profile Generated!")
+    # (Session Metadata & Device Setup, the Generate button, and the
+    # session-generation logic now live at the top of this tab, in the
+    # two-column dashboard — see the Session Summary / Competency
+    # Coverage / Generate panels above.)
 
     if "final_df" in st.session_state:
         if "slot_overrides" not in st.session_state:
