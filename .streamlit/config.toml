@@ -1,1 +1,13 @@
-
+# Dark "ops console" theme for simlos_app.py — colors match the KM_* constants
+# in the app's own CSS block (KM_BG/KM_PANEL/KM_TEXT/KM_AMBER). Keeping both
+# in sync matters: this file themes Streamlit's *native* widgets (selectbox,
+# multiselect, text/number inputs, dataframe, buttons, sidebar), while the
+# app's inline CSS themes the custom-built panels/badges/header. If you ever
+# change the KM_* palette in simlos_app.py, mirror the change here too.
+[theme]
+base = "dark"
+primaryColor = "#F5A623"
+backgroundColor = "#0B0E13"
+secondaryBackgroundColor = "#343c4a"
+textColor = "#E8EAED"
+font = "monospace"
