@@ -143,6 +143,31 @@
 #                  "9 scenario/phase rows" / "35 scenario-specific
 #                  profile(s)" and correctly omits the detail line for
 #                  Keypams.xlsx when it isn't loaded (OPTIONAL, no file).
+#   ver31        — Follow-up polish + a full ver25→ver26 audit:
+#                  - .ds-detail text (the counts restored in ver30) is
+#                    now KM_GREEN instead of muted gray, for legibility.
+#                  - Header showed only F/O as "Candidate" — but the
+#                    app's own data model (save_session_to_history)
+#                    already tracks BOTH capt_id and fo_id as separate
+#                    candidates. This wasn't a ver26 regression (ver25
+#                    never had this branded header at all to regress
+#                    from) — just an incomplete first pass. Header now
+#                    shows two meta fields: "Candidate · Capt" and
+#                    "Candidate · F/O".
+#                  - Ran a full audit, not just a spot-check: compared
+#                    every function definition ver25 vs ver26 (ast-level,
+#                    none dropped), every quoted UI label string in the
+#                    Session Setup tab (all present, only 3 cosmetic
+#                    renames of hidden file-uploader captions), and did a
+#                    byte-for-byte diff of every OTHER tab's code
+#                    (tab_history, tab_standard, tab_env, tab_orca,
+#                    tab_selector, tab_debrief) — all identical, zero
+#                    diff. Conclusion: ver26's redesign was scoped
+#                    exactly to Session Setup + header as its own
+#                    changelog claimed; the two regressions already found
+#                    and fixed (ver30's detail counts, this version's
+#                    dual-candidate header) were the complete list, not
+#                    a sample of more still hiding elsewhere.
 # ==========================================
 import streamlit as st
 import pandas as pd
@@ -565,7 +590,7 @@ st.markdown(f"""
     }}
     .ds-status-loaded {{ color: {KM_GREEN}; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; }}
     .ds-status-optional {{ color: {KM_TEXT_MUTED}; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; }}
-    .ds-detail {{ font-size: 10.5px; color: {KM_TEXT_MUTED}; margin: -4px 0 7px 12px; }}
+    .ds-detail {{ font-size: 10.5px; color: {KM_GREEN}; margin: -4px 0 7px 12px; }}
     .doc-ref-row {{ font-size: 12px; color: {KM_TEXT_MUTED}; margin-bottom: 4px; }}
     .doc-ref-tag {{ color: {KM_AMBER}; font-weight: 700; }}
 
@@ -2175,7 +2200,11 @@ with tab_session:
                 <div class="km-meta-value km-meta-value-accent">{_session_label}</div>
             </div>
             <div class="km-meta">
-                <div class="km-meta-label">Candidate</div>
+                <div class="km-meta-label">Candidate · Capt</div>
+                <div class="km-meta-value">{st.session_state.capt_name}</div>
+            </div>
+            <div class="km-meta">
+                <div class="km-meta-label">Candidate · F/O</div>
                 <div class="km-meta-value">{st.session_state.fo_name}</div>
             </div>
             <div class="km-pills">
