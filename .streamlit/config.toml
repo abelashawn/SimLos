@@ -8,6 +8,6 @@
 base = "dark"
 primaryColor = "#F5A623"
 backgroundColor = "#041f4d"
-secondaryBackgroundColor = "#343c4a"
+secondaryBackgroundColor = "#0f1d36"
 textColor = "#E8EAED"
 font = "geist mono"
