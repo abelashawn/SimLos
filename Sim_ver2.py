@@ -4,6 +4,7 @@ import io
 import re
 import os
 import sys
+import sqlite3
 import difflib
 import urllib.request
 
@@ -20,6 +21,190 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # ==========================================
+# HISTORICAL DATA STORE — CANDIDATE SESSION HISTORY
+#
+# Field-testing implementation: SQLite, a single file, zero external
+# infrastructure. This is deliberately NOT the final shared/online store —
+# it's built so that becomes a small change later, not a rewrite:
+#   - every function below takes a connection and uses plain parameterized
+#     SQL (no SQLite-only syntax beyond AUTOINCREMENT), so swapping
+#     get_db_connection() for a psycopg2/SQLAlchemy Postgres connection is
+#     the only thing that needs to change to move onto a shared online DB
+#   - the schema is candidate-centric (staff number as the real identity
+#     key, not name) specifically so history retrieval works across
+#     sessions and typos in a name field
+#
+# NOT a replacement for Pelesys or any official system of record — this is
+# a local convenience log for this app's own retrieval/reporting during
+# field testing.
+# ==========================================
+DB_PATH = os.environ.get("EBT_HISTORY_DB_PATH", "ebt_session_history.db")
+
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db():
+    conn = get_db_connection()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS candidates (
+            candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            staff_number TEXT UNIQUE NOT NULL,
+            full_name TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS training_sessions (
+            session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sim_id TEXT,
+            session_mode TEXT,
+            captain_candidate_id INTEGER REFERENCES candidates(candidate_id),
+            fo_candidate_id INTEGER REFERENCES candidates(candidate_id),
+            total_dod INTEGER,
+            max_dod_threshold INTEGER,
+            source_workflow TEXT NOT NULL DEFAULT 'session_setup',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS session_slots (
+            slot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL REFERENCES training_sessions(session_id) ON DELETE CASCADE,
+            slot_number INTEGER NOT NULL,
+            event_title TEXT NOT NULL,
+            phase_number INTEGER,
+            dod INTEGER,
+            role_focus TEXT,
+            instructor_grade INTEGER,
+            instructor_notes TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS slot_competency_grades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slot_id INTEGER NOT NULL REFERENCES session_slots(slot_id) ON DELETE CASCADE,
+            competency_code TEXT NOT NULL,
+            grade INTEGER,
+            observed INTEGER NOT NULL DEFAULT 1,
+            note TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sessions_capt ON training_sessions(captain_candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_fo ON training_sessions(fo_candidate_id);
+        CREATE INDEX IF NOT EXISTS idx_slots_session ON session_slots(session_id);
+        CREATE INDEX IF NOT EXISTS idx_comp_grades_slot ON slot_competency_grades(slot_id);
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_or_create_candidate(conn, staff_number, full_name):
+    """Staff number is the real identity key. If it's blank, the candidate
+    isn't saved to history at all — a name alone isn't a reliable match
+    across sessions (typos, duplicates), so we don't silently create a
+    record that history lookup can't actually find later."""
+    staff_number = (staff_number or "").strip()
+    full_name = (full_name or "").strip()
+    if not staff_number:
+        return None
+    cur = conn.execute("SELECT candidate_id, full_name FROM candidates WHERE staff_number = ?", (staff_number,))
+    row = cur.fetchone()
+    if row:
+        candidate_id, stored_name = row
+        if full_name and full_name != stored_name:
+            conn.execute("UPDATE candidates SET full_name = ? WHERE candidate_id = ?", (full_name, candidate_id))
+        return candidate_id
+    cur = conn.execute("INSERT INTO candidates (staff_number, full_name) VALUES (?, ?)", (staff_number, full_name or staff_number))
+    return cur.lastrowid
+
+
+def save_session_to_history(existing_session_id, sim_id, session_mode, capt_staff_no, capt_name,
+                             fo_staff_no, fo_name, total_dod, max_dod_threshold, source_workflow,
+                             slots):
+    """Insert or update one session's full record. slots is a list of dicts:
+    {slot_number, event_title, phase_number, dod, role_focus, instructor_grade,
+     instructor_notes, competencies: [{code, grade, observed, note}, ...]}.
+    Re-saving the same session (existing_session_id set) replaces its slot
+    data rather than appending duplicates — repeated exports during one
+    grading session shouldn't multiply history rows."""
+    conn = get_db_connection()
+    try:
+        capt_id = get_or_create_candidate(conn, capt_staff_no, capt_name)
+        fo_id = get_or_create_candidate(conn, fo_staff_no, fo_name)
+
+        if existing_session_id:
+            conn.execute(
+                """UPDATE training_sessions SET sim_id=?, session_mode=?, captain_candidate_id=?, fo_candidate_id=?,
+                   total_dod=?, max_dod_threshold=?, updated_at=datetime('now') WHERE session_id=?""",
+                (sim_id, session_mode, capt_id, fo_id, total_dod, max_dod_threshold, existing_session_id)
+            )
+            session_id = existing_session_id
+            conn.execute("DELETE FROM session_slots WHERE session_id = ?", (session_id,))
+        else:
+            cur = conn.execute(
+                """INSERT INTO training_sessions (sim_id, session_mode, captain_candidate_id, fo_candidate_id,
+                   total_dod, max_dod_threshold, source_workflow) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (sim_id, session_mode, capt_id, fo_id, total_dod, max_dod_threshold, source_workflow)
+            )
+            session_id = cur.lastrowid
+
+        for slot in slots:
+            cur = conn.execute(
+                """INSERT INTO session_slots (session_id, slot_number, event_title, phase_number, dod,
+                   role_focus, instructor_grade, instructor_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (session_id, slot["slot_number"], slot["event_title"], slot.get("phase_number"),
+                 slot.get("dod"), slot.get("role_focus"), slot.get("instructor_grade"), slot.get("instructor_notes"))
+            )
+            slot_id = cur.lastrowid
+            for comp in slot.get("competencies", []):
+                conn.execute(
+                    """INSERT INTO slot_competency_grades (slot_id, competency_code, grade, observed, note)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (slot_id, comp["code"], comp.get("grade"), int(comp.get("observed", True)), comp.get("note", ""))
+                )
+        conn.commit()
+        return session_id, (capt_id is not None or fo_id is not None)
+    finally:
+        conn.close()
+
+
+def get_candidate_history(staff_number):
+    """Every session a candidate (by staff number) appears in, either seat,
+    with per-competency grades — the actual retrieval this whole feature
+    is for."""
+    conn = get_db_connection()
+    try:
+        cur = conn.execute("SELECT candidate_id, full_name FROM candidates WHERE staff_number = ?", (staff_number.strip(),))
+        row = cur.fetchone()
+        if not row:
+            return None, None
+        candidate_id, full_name = row
+        sessions = conn.execute(
+            """SELECT ts.session_id, ts.created_at, ts.sim_id, ts.session_mode, ts.source_workflow,
+                      CASE WHEN ts.captain_candidate_id = ? THEN 'Captain' ELSE 'First Officer' END AS seat
+               FROM training_sessions ts
+               WHERE ts.captain_candidate_id = ? OR ts.fo_candidate_id = ?
+               ORDER BY ts.created_at DESC""",
+            (candidate_id, candidate_id, candidate_id)
+        ).fetchall()
+
+        grades = conn.execute(
+            """SELECT ts.session_id, ts.created_at, ss.event_title, ss.instructor_grade,
+                      scg.competency_code, scg.grade, scg.observed, scg.note
+               FROM training_sessions ts
+               JOIN session_slots ss ON ss.session_id = ts.session_id
+               LEFT JOIN slot_competency_grades scg ON scg.slot_id = ss.slot_id
+               WHERE ts.captain_candidate_id = ? OR ts.fo_candidate_id = ?
+               ORDER BY ts.created_at DESC""",
+            (candidate_id, candidate_id)
+        ).fetchall()
+        return {"candidate_id": candidate_id, "full_name": full_name, "sessions": sessions}, grades
+    finally:
+        conn.close()
+
+# ==========================================
 # PAGE CONFIG & HYBRID THEME STYLING
 # ==========================================
 st.set_page_config(
@@ -27,6 +212,8 @@ st.set_page_config(
     page_icon="✈️",
     layout="wide"
 )
+
+init_db()
 
 st.markdown("""
 <style>
@@ -108,22 +295,6 @@ st.markdown("""
         margin-bottom: 8px;
     }
 
-    section[data-testid="stSidebar"] {
-        min-width: 310px !important; 
-        max-width: 310px !important;
-    }
-    
-    section[data-testid="stSidebar"] div[data-baseweb="select"] * {
-        font-size: 11.5px !important;
-    }
-    
-    .sidebar-header {
-        font-size: 13px;
-        font-weight: 700;
-        color: #0284C7;
-        letter-spacing: 0.04em;
-        margin-bottom: 6px;
-    }
     .status-badge-ok {
         background-color: rgba(16, 185, 129, 0.15);
         color: #10B981;
@@ -1231,54 +1402,92 @@ def build_competency_venn_svg(sets_dict):
 
     return f'<svg width="100%" viewBox="0 0 680 {vh}">{circles}{text}</svg>'
 
-# SIDEBAR CONFIGURATION
 # ==========================================
-st.sidebar.markdown("<div class='sidebar-header'>📍 SLOT CONFIGURATION</div>", unsafe_allow_html=True)
+# NAVIGATION TABS
+# (tabs are created here, but only their labels/order are fixed by this
+# call — the tab_session/tab_env split below runs their *bodies* wherever
+# execution order actually requires, same pattern already used for
+# tab_selector/tab_sql_schema elsewhere in this file.)
+# ==========================================
+tab_session, tab_env, tab_orca, tab_selector, tab_standard, tab_debrief, tab_history = st.tabs([
+    "⚙️ Session Setup", 
+    "🌐 Environment & IOS", 
+    "📋 OPC & ORCA Workflow",
+    "🎯 Scenario Selector",
+    "📐 Grading Standard",
+    "📊 Session Debrief",
+    "🗂️ Candidate History"
+])
 
-if "slot_list" not in st.session_state:
-    st.session_state.slot_list = [
-        {"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False},
-        {"phase": 2, "dod": 2, "role": "PF Focus", "type": "Any", "mandatory": True},
-        {"phase": 6, "dod": 2, "role": "PM Focus", "type": "Any", "mandatory": False},
-        {"phase": 7, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False}
-    ]
+# SLOT CONFIGURATION & DATA SOURCES
+# Moved out of the sidebar and into the Session Setup tab — this is the
+# only tab these controls are ever used from, and removing the sidebar
+# entirely gives every tab (especially the ORCA per-OB rows) the full
+# window width to work with instead of losing a fixed slice of it
+# permanently to a panel most tabs never touch.
+# ==========================================
+with tab_session:
+    with st.container(border=True):
+        st.markdown("#### 📍 Slot Configuration")
 
-btn_c1, btn_c2 = st.sidebar.columns(2)
-if btn_c1.button("➕ Add Slot", use_container_width=True):
-    if len(st.session_state.slot_list) < 12:
-        st.session_state.slot_list.append({"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False})
-        st.rerun()
+        if "slot_list" not in st.session_state:
+            st.session_state.slot_list = [
+                {"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False},
+                {"phase": 2, "dod": 2, "role": "PF Focus", "type": "Any", "mandatory": True},
+                {"phase": 6, "dod": 2, "role": "PM Focus", "type": "Any", "mandatory": False},
+                {"phase": 7, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False}
+            ]
 
-if btn_c2.button("❌ Remove", use_container_width=True):
-    if len(st.session_state.slot_list) > 1:
-        st.session_state.slot_list.pop()
-        st.rerun()
+        btn_c1, btn_c2, btn_c3 = st.columns([1, 1, 4])
+        with btn_c1:
+            if st.button("➕ Add Slot", use_container_width=True):
+                if len(st.session_state.slot_list) < 12:
+                    st.session_state.slot_list.append({"phase": 1, "dod": 1, "role": "PF Focus", "type": "Any", "mandatory": False})
+                    st.rerun()
+        with btn_c2:
+            if st.button("❌ Remove", use_container_width=True):
+                if len(st.session_state.slot_list) > 1:
+                    st.session_state.slot_list.pop()
+                    st.rerun()
 
-slot_configurations = []
-for i in range(len(st.session_state.slot_list)):
-    slot_data = st.session_state.slot_list[i]
-    p_val = st.sidebar.selectbox("Phase", options=ALL_PHASE_KEYS, index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0, format_func=lambda x: f"Ph {x}: {PHASE_NAMES[x].split('–')[1].strip()}", key=f"phase_sel_{i}", label_visibility="collapsed")
-    d_val = st.sidebar.selectbox("DOD", options=[1, 2, 3], index=slot_data["dod"]-1, format_func=lambda x: f"DOD {x}", key=f"dod_sel_{i}", label_visibility="collapsed")
-    role_val = st.sidebar.selectbox("Role", options=ROLE_OPTIONS, index=ROLE_OPTIONS.index(slot_data["role"]) if slot_data["role"] in ROLE_OPTIONS else 0, key=f"role_sel_{i}", label_visibility="collapsed")
-    type_val = st.sidebar.selectbox("Category", options=["Any", "Technical Failure", "Non-Technical / CRM (Non-ATA)", "ATA Specific"], key=f"type_sel_{i}", label_visibility="collapsed")
-    
-    ata_val = st.sidebar.number_input("ATA Chapter", min_value=11, max_value=80, key=f"ata_sel_{i}") if type_val == "ATA Specific" else None
-    comp_val = st.sidebar.selectbox("Target Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key=f"comp_sel_{i}", label_visibility="collapsed")
-    is_mandatory = st.sidebar.checkbox("Pin Exercise", value=slot_data.get("mandatory", False), key=f"mand_sel_{i}")
-    
-    slot_configurations.append({"slot": i + 1, "phase": int(p_val), "dod": int(d_val), "role": role_val, "type": type_val, "ata": ata_val, "competency": comp_val, "mandatory": is_mandatory})
+        hdr_cols = st.columns([0.5, 1.3, 0.8, 1.1, 1.5, 1.3, 1.6, 0.9])
+        for col, label in zip(hdr_cols, ["Slot", "Phase", "DOD", "Role", "Category", "ATA", "Competency", "Pin"]):
+            col.markdown(f"<div style='font-size:11px; opacity:0.65; font-weight:600;'>{label}</div>", unsafe_allow_html=True)
 
-st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
-uploaded_scen = st.sidebar.file_uploader("Upload Scenarios.csv", type=["csv"])
-uploaded_comp = st.sidebar.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags.")
-uploaded_scenario_obs = st.sidebar.file_uploader("Upload Scenario_Observable_Behaviours.xlsx (optional)", type=["xlsx"], help="Per-event PTA and Observable Behaviours authored by your training team — takes priority over the generic ATA-family fallback for any event it covers.")
+        slot_configurations = []
+        for i in range(len(st.session_state.slot_list)):
+            slot_data = st.session_state.slot_list[i]
+            row_cols = st.columns([0.5, 1.3, 0.8, 1.1, 1.5, 1.3, 1.6, 0.9])
+            with row_cols[0]:
+                st.markdown(f"<div style='padding-top:8px; font-weight:600;'>{i+1}</div>", unsafe_allow_html=True)
+            with row_cols[1]:
+                p_val = st.selectbox("Phase", options=ALL_PHASE_KEYS, index=ALL_PHASE_KEYS.index(slot_data["phase"]) if slot_data["phase"] in ALL_PHASE_KEYS else 0, format_func=lambda x: f"Ph {x}: {PHASE_NAMES[x].split('–')[1].strip()}", key=f"phase_sel_{i}", label_visibility="collapsed")
+            with row_cols[2]:
+                d_val = st.selectbox("DOD", options=[1, 2, 3], index=slot_data["dod"]-1, format_func=lambda x: f"DOD {x}", key=f"dod_sel_{i}", label_visibility="collapsed")
+            with row_cols[3]:
+                role_val = st.selectbox("Role", options=ROLE_OPTIONS, index=ROLE_OPTIONS.index(slot_data["role"]) if slot_data["role"] in ROLE_OPTIONS else 0, key=f"role_sel_{i}", label_visibility="collapsed")
+            with row_cols[4]:
+                type_val = st.selectbox("Category", options=["Any", "Technical Failure", "Non-Technical / CRM (Non-ATA)", "ATA Specific"], key=f"type_sel_{i}", label_visibility="collapsed")
+            with row_cols[5]:
+                ata_val = st.number_input("ATA Chapter", min_value=11, max_value=80, key=f"ata_sel_{i}", label_visibility="collapsed") if type_val == "ATA Specific" else None
+                if type_val != "ATA Specific":
+                    st.markdown("<div style='opacity:0.4; font-size:12px; padding-top:8px;'>—</div>", unsafe_allow_html=True)
+            with row_cols[6]:
+                comp_val = st.selectbox("Target Competency", options=["Any"] + list(COMPETENCY_KEYS.keys()), format_func=lambda x: x if x == "Any" else f"{x} – {COMPETENCY_KEYS[x]}", key=f"comp_sel_{i}", label_visibility="collapsed")
+            with row_cols[7]:
+                is_mandatory = st.checkbox("Pin", value=slot_data.get("mandatory", False), key=f"mand_sel_{i}", label_visibility="collapsed")
 
-st.sidebar.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
-st.sidebar.markdown("<div class='sidebar-header'>📚 DOCUMENT REFERENCES</div>", unsafe_allow_html=True)
-for tag, title in DOCUMENT_REFERENCES.items():
-    st.sidebar.markdown(f"<div style='font-size: 11px; color: var(--text-color); opacity: 0.75; margin-bottom: 2px;'><b>[{tag}]</b> {title}</div>", unsafe_allow_html=True)
+            slot_configurations.append({"slot": i + 1, "phase": int(p_val), "dod": int(d_val), "role": role_val, "type": type_val, "ata": ata_val, "competency": comp_val, "mandatory": is_mandatory})
 
-st.sidebar.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v5.0 2026</div>", unsafe_allow_html=True)
+    with st.expander("📂 Data Sources (Scenarios.csv, Keypams.xlsx, Scenario OBs)", expanded=False):
+        uploaded_scen = st.file_uploader("Upload Scenarios.csv", type=["csv"])
+        uploaded_comp = st.file_uploader("Upload Keypams.xlsx (optional)", type=["xlsx"], help="Per-event competency flags.")
+        uploaded_scenario_obs = st.file_uploader("Upload Scenario_Observable_Behaviours.xlsx (optional)", type=["xlsx"], help="Per-event PTA and Observable Behaviours authored by your training team — takes priority over the generic ATA-family fallback for any event it covers.")
+
+    with st.expander("📚 Document References", expanded=False):
+        for tag, title in DOCUMENT_REFERENCES.items():
+            st.markdown(f"<div style='font-size: 11px; color: var(--text-color); opacity: 0.75; margin-bottom: 2px;'><b>[{tag}]</b> {title}</div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; font-size: 11px; color: var(--text-color); opacity: 0.6; margin-top: 10px;'>Designed by Shawn Abela Ver v5.0 2026</div>", unsafe_allow_html=True)
 
 # ==========================================
 # DATA LOADING FUNCTION
@@ -1291,16 +1500,34 @@ def resource_path(relative_path):
     parent_path = os.path.join(os.path.dirname(base_path), relative_path)
     return parent_path if os.path.exists(parent_path) else local_path
 
-scenarios_source = uploaded_scen if uploaded_scen is not None else resource_path("Scenarios.csv")
-competency_source = uploaded_comp if uploaded_comp is not None else (resource_path("Keypams.xlsx") if os.path.exists(resource_path("Keypams.xlsx")) else None)
-scenario_obs_source = uploaded_scenario_obs if uploaded_scenario_obs is not None else (resource_path("Scenario_Observable_Behaviours.xlsx") if os.path.exists(resource_path("Scenario_Observable_Behaviours.xlsx")) else None)
+
+def find_bundled_file(candidate_names):
+    """Check each candidate filename (in order) next to the script and
+    return the first one that actually exists. Used so a working file
+    doesn't have to be renamed exactly to auto-load — e.g. the
+    Scenario_Observable_Behaviours template still gets picked up whether
+    it's saved with or without a '_TEMPLATE' suffix."""
+    for name in candidate_names:
+        path = resource_path(name)
+        if os.path.exists(path):
+            return path
+    return None
+
+
+scenarios_source = uploaded_scen if uploaded_scen is not None else (find_bundled_file(["Scenarios.csv"]) or resource_path("Scenarios.csv"))
+competency_source = uploaded_comp if uploaded_comp is not None else find_bundled_file(["Keypams.xlsx"])
+scenario_obs_source = uploaded_scenario_obs if uploaded_scenario_obs is not None else find_bundled_file([
+    "Scenario_Observable_Behaviours.xlsx",
+    "Scenario_Observable_Behaviours_TEMPLATE.xlsx",
+])
 
 if scenario_obs_source is not None:
     SCENARIO_OB_LIBRARY, scenario_obs_err = load_scenario_obs_library(scenario_obs_source)
-    if scenario_obs_err:
-        st.sidebar.warning(f"Could not read Scenario_Observable_Behaviours.xlsx: {scenario_obs_err}")
-    elif SCENARIO_OB_LIBRARY:
-        st.sidebar.success(f"✓ {len(SCENARIO_OB_LIBRARY)} scenario-specific OB profile(s) loaded.")
+    with tab_session:
+        if scenario_obs_err:
+            st.warning(f"Could not read {os.path.basename(scenario_obs_source)}: {scenario_obs_err}")
+        elif SCENARIO_OB_LIBRARY:
+            st.success(f"✓ {len(SCENARIO_OB_LIBRARY)} scenario-specific OB profile(s) auto-loaded from `{os.path.basename(scenario_obs_source)}`.")
 
 @st.cache_data(show_spinner="Loading and caching matrix scenarios...")
 def load_scenario_database(s_source, c_source):
@@ -1469,37 +1696,80 @@ def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_
     return buffer
 
 # ==========================================
-# DATA LOAD STATUS
-# match_stats was already being computed by load_scenario_database on
-# every run but never actually shown anywhere — so an instructor had no
-# way to tell whether the Keypams.xlsx cross-match was working well or
-# barely at all. Surfaced here as a persistent banner above the tabs.
+# DATA LOAD STATUS — one unified banner for all three data sources, so
+# it's clear at a glance which are actually active and whether each came
+# from an auto-detected bundled file or a manual upload, rather than three
+# scattered messages an instructor has to hunt for across tabs.
 # ==========================================
+def _source_tag(source, uploaded_widget_value):
+    if uploaded_widget_value is not None:
+        return "uploaded this session"
+    if source is not None:
+        return f"auto-loaded from `{os.path.basename(source)}`"
+    return "not supplied"
+
 if df is not None:
+    lines = []
+    lines.append(f"<div style='font-size:12.5px; margin-bottom:2px;'><b>Scenarios.csv</b> — {len(df)} scenario/phase rows ({_source_tag(scenarios_source, uploaded_scen)})</div>")
+
     if match_stats.get("keypams_loaded"):
         pct = (match_stats["matched_events"] / match_stats["total_events"] * 100) if match_stats["total_events"] else 0
-        badge_cls = "status-badge-ok" if pct >= 80 else "status-badge-warn"
-        st.markdown(
-            f"<div class='{badge_cls}'>✓ {len(df)} scenario/phase rows loaded | Keypams.xlsx cross-matched {match_stats['matched_events']}/{match_stats['total_events']} events ({pct:.0f}%)</div>",
-            unsafe_allow_html=True
-        )
+        lines.append(f"<div style='font-size:12.5px; margin-bottom:2px;'><b>Keypams.xlsx</b> — cross-matched {match_stats['matched_events']}/{match_stats['total_events']} events ({pct:.0f}%), {_source_tag(competency_source, uploaded_comp)}</div>")
     else:
-        st.markdown(
-            f"<div class='status-badge-warn'>✓ {len(df)} scenario/phase rows loaded | No Keypams.xlsx supplied — competencies are derived only from each event's own syllabus keyword match (falls back to the generic set otherwise)</div>",
-            unsafe_allow_html=True
-        )
+        lines.append("<div style='font-size:12.5px; margin-bottom:2px;'><b>Keypams.xlsx</b> — not supplied; competencies derived from each event's own syllabus keyword match / generic fallback only</div>")
 
-# ==========================================
-# NAVIGATION TABS
-# ==========================================
-tab_session, tab_env, tab_orca, tab_selector, tab_standard, tab_debrief = st.tabs([
-    "⚙️ Session Setup", 
-    "🌐 Environment & IOS", 
-    "📋 OPC & ORCA Workflow",
-    "🎯 Scenario Selector",
-    "📐 Grading Standard",
-    "📊 Session Debrief"
-])
+    if scenario_obs_source is not None and SCENARIO_OB_LIBRARY:
+        lines.append(f"<div style='font-size:12.5px;'><b>Scenario Observable Behaviours</b> — {len(SCENARIO_OB_LIBRARY)} scenario-specific profile(s), {_source_tag(scenario_obs_source, uploaded_scenario_obs)}</div>")
+    else:
+        lines.append("<div style='font-size:12.5px;'><b>Scenario Observable Behaviours</b> — not supplied; falls back to ATA-family/generic OB sets</div>")
+
+    overall_ok = match_stats.get("keypams_loaded") and scenario_obs_source is not None
+    badge_cls = "status-badge-ok" if overall_ok else "status-badge-warn"
+    st.markdown(f"<div class='{badge_cls}'>{''.join(lines)}</div>", unsafe_allow_html=True)
+
+with tab_history:
+    st.markdown("#### 🗂️ Candidate Session History")
+    st.markdown(
+        "Looks up every session a candidate has been graded in, by staff number — across both the "
+        "Session Setup and Uploaded Syllabus workflows. This is a **local field-testing log**, not a "
+        "replacement for any official system of record."
+    )
+    lookup_staff_no = st.text_input("Staff Number", value="", placeholder="e.g. KM10234", key="history_lookup_staff_no")
+    if lookup_staff_no.strip():
+        candidate_info, grade_rows = get_candidate_history(lookup_staff_no)
+        if candidate_info is None:
+            st.warning(f"No candidate found with staff number '{lookup_staff_no.strip()}'. They may not have been graded in a saved session yet, or the number doesn't match what was entered at the time.")
+        else:
+            st.success(f"✓ {candidate_info['full_name']} — {len(candidate_info['sessions'])} session(s) on record.")
+
+            sessions_df = pd.DataFrame(candidate_info["sessions"], columns=["Session ID", "Date", "Sim/Device", "Mode", "Workflow", "Seat"])
+            st.markdown("<b>Sessions</b>", unsafe_allow_html=True)
+            st.dataframe(sessions_df, use_container_width=True, hide_index=True)
+
+            comp_grades_history = {}
+            for _, _, _, grade, comp_code, comp_grade, observed, _ in grade_rows:
+                if comp_code and observed:
+                    comp_grades_history.setdefault(comp_code, []).append(comp_grade if comp_grade is not None else grade)
+
+            if comp_grades_history:
+                st.markdown("<b>Average Grade by Competency (all sessions on record)</b>", unsafe_allow_html=True)
+                trend_df = pd.DataFrame({
+                    "Competency": list(comp_grades_history.keys()),
+                    "Avg Grade": [sum(v) / len(v) for v in comp_grades_history.values()],
+                    "Times Graded": [len(v) for v in comp_grades_history.values()],
+                }).set_index("Competency")
+                st.bar_chart(trend_df["Avg Grade"])
+                st.dataframe(trend_df, use_container_width=True)
+
+                low_grades = [(s_id, ev, g) for s_id, _, ev, g, _, _, _, _ in grade_rows if g is not None and g <= 2]
+                if low_grades:
+                    st.markdown("<b>Below-Standard Items (Grade ≤2) Across History</b>", unsafe_allow_html=True)
+                    low_df = pd.DataFrame(low_grades, columns=["Session ID", "Event", "Grade"]).drop_duplicates()
+                    st.dataframe(low_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No competency-level grades recorded yet for this candidate.")
+    else:
+        st.info("Enter a staff number above to retrieve that candidate's session history.")
 
 with tab_standard:
     st.markdown("#### 📐 KM Malta Airlines Official Grading Standard")
@@ -1646,8 +1916,10 @@ with tab_session:
             session_mode = st.selectbox("Training Focus / Mode", ["EBT Evaluation & Coaching", "EBT Line-Oriented Assessment", "Recurrent Check (LPC/OPC)"])
         with m_col2:
             capt_name = st.text_input("Captain Name", value="Capt. Unassigned")
+            capt_staff_no = st.text_input("Captain Staff No.", value="", placeholder="e.g. KM10234", help="Used to match this candidate's record across sessions in the history database — a name alone isn't reliable for that (typos, duplicates).")
         with m_col3:
             fo_name = st.text_input("First Officer Name", value="F/O Unassigned")
+            fo_staff_no = st.text_input("F/O Staff No.", value="", placeholder="e.g. KM10567")
         with m_col4:
             sim_id = st.text_input("Sim / Device ID", value="KM Malta A320 STD2.2")
 
@@ -1697,6 +1969,7 @@ with tab_session:
         st.session_state.slot_overrides = {}
         st.session_state.slot_competencies = {}
         st.session_state.trigger_generation = False
+        st.session_state.db_session_id = None  # a freshly generated profile is a new history record, not an update to the last one
         st.success("Session Profile Generated!")
 
     if "final_df" in st.session_state:
@@ -1825,6 +2098,43 @@ with tab_session:
         with col_exp2:
             pdf_data = generate_pdf_briefing(final_df, instructor_grades, instructor_notes, slot_competencies, total_dod, max_dod_threshold, session_mode, capt_name, fo_name, sim_id, ios_summary_str)
             st.download_button(label="📄 Download Completed KM Malta EBT PDF Record", data=pdf_data, file_name=f"km_malta_ebt_record_{max_dod_threshold}.pdf", mime="application/pdf", use_container_width=True, key="download_pdf_button")
+
+        # ==========================================
+        # AUTO-SAVE TO HISTORY DATABASE
+        # Saves automatically on every render of this block (i.e. whenever
+        # grading changes) rather than requiring a separate button — but
+        # upserts against the same DB session_id once one exists, so
+        # repeated reruns update the record instead of multiplying rows.
+        # A session with no staff number on either seat still gets
+        # recorded (for later reference by sim/date), it just won't be
+        # retrievable by candidate history — that requires the identity
+        # key.
+        # ==========================================
+        slots_for_db = []
+        for _, row in final_df.iterrows():
+            s_num = int(row["SLOT"])
+            grade = instructor_grades.get(s_num)
+            demonstrated = slot_competencies.get(s_num, [])
+            slots_for_db.append({
+                "slot_number": s_num,
+                "event_title": row["EVENT"],
+                "phase_number": int(row["PHASES"]),
+                "dod": int(row["DOD"]),
+                "role_focus": row.get("ROLE", ""),
+                "instructor_grade": grade,
+                "instructor_notes": instructor_notes.get(s_num, ""),
+                "competencies": [{"code": c, "grade": grade, "observed": True, "note": ""} for c in demonstrated],
+            })
+        saved_session_id, linked_candidate = save_session_to_history(
+            st.session_state.get("db_session_id"), sim_id, session_mode,
+            capt_staff_no, capt_name, fo_staff_no, fo_name,
+            int(total_dod), int(max_dod_threshold), "session_setup", slots_for_db
+        )
+        st.session_state.db_session_id = saved_session_id
+        if linked_candidate:
+            st.caption(f"✓ Saved to history database (session #{saved_session_id}, linked to staff number).")
+        else:
+            st.caption(f"✓ Saved to history database (session #{saved_session_id}) — add a Captain/F.O. staff number above to make this retrievable by candidate history.")
 
 with tab_orca:
     st.markdown("#### 📋 OPC & ORCA Workflow Suite (Uploaded Syllabus Analysis & Debrief)")
@@ -2034,6 +2344,44 @@ with tab_orca:
                 "Syllabus Program Evaluation", capt_name, fo_name, sim_id, "Uploaded PDF Syllabus Review"
             )
             st.download_button(label="📄 Download Uploaded Syllabus EBT PDF Report", data=pdf_up_data, file_name="uploaded_syllabus_ebt_record.pdf", mime="application/pdf", use_container_width=True, key="dl_up_pdf")
+
+        # Auto-save to history database — same pattern as the Session Setup
+        # workflow, but with real per-OB grades/notes rather than one
+        # grade per exercise repeated across its competencies.
+        slots_for_db_up = []
+        for i, k in enumerate(selected_ex_keys):
+            ex_data = PROGRAM_SYLLABUS_EXERCISES[k]
+            comp_entries = []
+            for s_idx, step in enumerate(ex_data["sequence"]):
+                for ob_idx, ob in enumerate(step["obs"]):
+                    observed = st.session_state.get(f"orc_observed_{k}_{s_idx}_{ob_idx}", False)
+                    if observed:
+                        comp_entries.append({
+                            "code": ob.get("comp", "GEN"),
+                            "grade": st.session_state.get(f"orc_grade_{k}_{s_idx}_{ob_idx}", 3),
+                            "observed": True,
+                            "note": st.session_state.get(f"orc_note_{k}_{s_idx}_{ob_idx}", ""),
+                        })
+            slots_for_db_up.append({
+                "slot_number": i + 1,
+                "event_title": ex_data["title"],
+                "phase_number": ex_data.get("phase"),
+                "dod": None,
+                "role_focus": "PF / PM",
+                "instructor_grade": uploaded_grades.get(k),
+                "instructor_notes": uploaded_notes.get(k, ""),
+                "competencies": comp_entries,
+            })
+        saved_up_session_id, linked_up_candidate = save_session_to_history(
+            st.session_state.get("db_session_id_uploaded"), sim_id, "Uploaded Syllabus Review",
+            capt_staff_no, capt_name, fo_staff_no, fo_name,
+            len(selected_ex_keys) * 2, len(selected_ex_keys) * 3, "uploaded_syllabus", slots_for_db_up
+        )
+        st.session_state.db_session_id_uploaded = saved_up_session_id
+        if linked_up_candidate:
+            st.caption(f"✓ Saved to history database (session #{saved_up_session_id}, linked to staff number).")
+        else:
+            st.caption(f"✓ Saved to history database (session #{saved_up_session_id}) — add a Captain/F.O. staff number in Session Setup to make this retrievable by candidate history.")
 
     else:
         st.info("Select at least one exercise from the uploaded program syllabus above to view the detailed OB & ORCA analysis and debrief suite.")
