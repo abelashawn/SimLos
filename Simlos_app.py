@@ -200,6 +200,60 @@
 #                  and Scenarios.csv row count from 5→11 without any
 #                  manual "Reboot app". Renamed to cache_token /
 #                  cache_token_a / cache_token_b throughout.
+#   ver33        — New feature: HLT · Data Health tab. Turns the manual
+#                  audit process used throughout this project (Keypams
+#                  duplicate-flag collisions, OB-library normalization
+#                  collisions, dead zero-flag rows, real tiered coverage
+#                  breakdown) into a permanent, self-service, always-
+#                  current panel instead of a one-off script run by hand.
+#                  Added compute_data_health_report() (cached, using the
+#                  cache_token pattern from ver32 correctly this time —
+#                  no leading underscores) plus a render block in a new
+#                  tab. Verified against the real production data files:
+#                  reproduces the exact same 6 zero-flag Keypams rows and
+#                  missing-KNO-column finding from the manual audit, and
+#                  the coverage breakdown now correctly shows 0 events in
+#                  the generic-fallback tier (10 keyword + 51 OB-library
+#                  + 64 Keypams = 125, exact match) — a direct, measured
+#                  result of the 12 OBs drafted earlier this project for
+#                  what used to be the fallback-only events.
+#   ver34        — Candidate history: SQLite -> optional hosted Postgres
+#                  (Supabase). Addresses the ephemeral-filesystem risk
+#                  flagged in the roadmap discussion (a local SQLite file
+#                  on Streamlit Cloud can be silently wiped on any
+#                  reboot/redeploy).
+#                  Design: added _PGCompatConnection/_PGCompatCursor,
+#                  a thin wrapper so the existing get_or_create_candidate/
+#                  save_session_to_history/get_candidate_history — code
+#                  that already worked and was already tested — needed
+#                  ZERO changes. All the SQLite-vs-Postgres translation
+#                  ('?' -> '%s' placeholders, emulating cur.lastrowid via
+#                  an auto-appended RETURNING clause since Postgres has
+#                  no rowid concept) happens once, in the connection
+#                  wrapper, not scattered across call sites.
+#                  Backend picked automatically: Postgres if
+#                  SUPABASE_DB_URL is set in st.secrets (or the
+#                  environment), else the original local SQLite file —
+#                  so this can't break a deployment that hasn't done the
+#                  migration yet. Added using_postgres() and a status
+#                  row in the Candidate History tab showing which
+#                  backend is active, with an explicit warning on the
+#                  SQLite path about Streamlit Cloud persistence.
+#                  Verified: (1) full SQLite regression suite — save,
+#                  retrieve, and re-save/update-in-place all produce
+#                  identical results to before the refactor; (2) isolated
+#                  unit tests of the Postgres wrapper's SQL translation
+#                  and RETURNING/lastrowid logic against a fake cursor,
+#                  since this sandbox has no network path to an actual
+#                  Supabase instance to test the real connection against
+#                  — that part needs verifying against a real
+#                  SUPABASE_DB_URL once one is configured.
+#                  Needs: psycopg2-binary added to requirements.txt, and
+#                  SUPABASE_DB_URL added to the app's Streamlit secrets
+#                  (the Postgres connection string from Supabase's
+#                  Project Settings -> Database -> Connection string,
+#                  transaction pooler variant, port 6543) before the
+#                  Postgres path activates.
 # ==========================================
 import streamlit as st
 import pandas as pd
@@ -210,6 +264,13 @@ import sys
 import sqlite3
 import difflib
 import urllib.request
+from datetime import datetime, timezone
+
+try:
+    import psycopg2
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
 
 try:
     import pypdf
@@ -226,79 +287,244 @@ from reportlab.lib import colors
 # ==========================================
 # HISTORICAL DATA STORE — CANDIDATE SESSION HISTORY
 #
-# Field-testing implementation: SQLite, a single file, zero external
-# infrastructure. This is deliberately NOT the final shared/online store —
-# it's built so that becomes a small change later, not a rewrite:
-#   - every function below takes a connection and uses plain parameterized
-#     SQL (no SQLite-only syntax beyond AUTOINCREMENT), so swapping
-#     get_db_connection() for a psycopg2/SQLAlchemy Postgres connection is
-#     the only thing that needs to change to move onto a shared online DB
-#   - the schema is candidate-centric (staff number as the real identity
-#     key, not name) specifically so history retrieval works across
-#     sessions and typos in a name field
+# Originally SQLite-only (a single file, zero external infrastructure)
+# for field-testing. Promoted to also support hosted Postgres (Supabase)
+# so candidate history survives Streamlit Cloud's ephemeral filesystem —
+# a local SQLite file there can be silently wiped on any reboot/redeploy,
+# which is a real problem for a feature whose whole point is tracking
+# grading history over time.
 #
-# NOT a replacement for Pelesys or any official system of record — this is
-# a local convenience log for this app's own retrieval/reporting during
-# field testing.
+# Design goal for this migration: touch as little as possible. Every
+# function below (get_or_create_candidate, save_session_to_history,
+# get_candidate_history) still uses plain SQLite-style '?' placeholders
+# and cur.lastrowid, completely UNCHANGED from before — all the
+# SQLite-vs-Postgres translation happens once, here, in
+# _PGCompatConnection. That's deliberate: those three functions already
+# worked and were already tested; rewriting their SQL dialect
+# per-backend would risk introducing a bug in code that didn't need to
+# change at all.
+#
+# Backend selection: Postgres is used if SUPABASE_DB_URL is present in
+# st.secrets (preferred) or the environment (fallback, e.g. for local
+# testing without a secrets.toml). Otherwise falls back to the original
+# local SQLite file — so this never breaks a setup that hasn't done the
+# migration yet.
+#
+# NOT a replacement for Pelesys or any official system of record — this
+# is a convenience log for this app's own retrieval/reporting.
 # ==========================================
 DB_PATH = os.environ.get("EBT_HISTORY_DB_PATH", "ebt_session_history.db")
 
+# Primary-key column per table — used to emulate SQLite's cur.lastrowid
+# on Postgres, which has no such concept (Postgres identity/serial columns
+# need an explicit RETURNING clause to get the new row's id back).
+_PK_COLUMNS = {
+    "candidates": "candidate_id",
+    "training_sessions": "session_id",
+    "session_slots": "slot_id",
+    "slot_competency_grades": "id",
+}
+
+
+class _PGCompatCursor:
+    """Just enough of the sqlite3 cursor surface (fetchone/fetchall/
+    lastrowid) for the existing DB functions to keep working unchanged
+    against a psycopg2 cursor."""
+    def __init__(self, raw_cursor, lastrowid=None):
+        self._cur = raw_cursor
+        self.lastrowid = lastrowid
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+
+class _PGCompatConnection:
+    """Wraps a psycopg2 connection so existing SQLite-style call sites —
+    conn.execute("... WHERE x = ?", (val,)), conn.executescript(...),
+    cur.lastrowid — work against Postgres with no changes at the call
+    site. Two translations happen here:
+      1. '?' positional placeholders -> psycopg2's '%s' style.
+      2. cur.lastrowid emulated via an auto-appended RETURNING clause on
+         INSERT statements (looked up from _PK_COLUMNS by table name),
+         since Postgres has no rowid concept.
+    """
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+
+    def execute(self, sql, params=()):
+        pg_sql = sql.replace("?", "%s")
+        returning_col = None
+        if sql.strip().upper().startswith("INSERT INTO"):
+            table = sql.split(None, 3)[2]
+            returning_col = _PK_COLUMNS.get(table)
+            if returning_col and "RETURNING" not in pg_sql.upper():
+                pg_sql = pg_sql.rstrip().rstrip(";") + f" RETURNING {returning_col}"
+        cur = self._conn.cursor()
+        cur.execute(pg_sql, params)
+        lastrowid = None
+        if returning_col:
+            row = cur.fetchone()
+            lastrowid = row[0] if row else None
+        return _PGCompatCursor(cur, lastrowid)
+
+    def executescript(self, script):
+        # Unlike sqlite3, psycopg2's cursor.execute() already accepts a
+        # multi-statement (semicolon-separated) string in one call, since
+        # it's just sent through to Postgres's simple query protocol —
+        # no separate "executescript" method needed or available.
+        cur = self._conn.cursor()
+        cur.execute(script)
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
+def _get_supabase_db_url():
+    """SUPABASE_DB_URL from st.secrets if present, else the environment
+    (so this also works outside a Streamlit run context, e.g. a plain
+    script or test). Never raises just because secrets.toml doesn't
+    exist — that's the normal, expected state before this migration is
+    configured."""
+    try:
+        if "SUPABASE_DB_URL" in st.secrets:
+            return st.secrets["SUPABASE_DB_URL"]
+    except Exception:
+        pass
+    return os.environ.get("SUPABASE_DB_URL")
+
+
+def using_postgres():
+    """True if this run is configured to use Supabase/Postgres rather
+    than the local SQLite fallback. Used by init_db() to pick the right
+    schema dialect, and safe to call from UI code (e.g. to show which
+    backend is active) without opening a connection."""
+    return HAS_PSYCOPG2 and bool(_get_supabase_db_url())
+
 
 def get_db_connection():
+    db_url = _get_supabase_db_url()
+    if db_url:
+        if not HAS_PSYCOPG2:
+            raise RuntimeError(
+                "SUPABASE_DB_URL is set but the psycopg2 package isn't installed — "
+                "add 'psycopg2-binary' to requirements.txt."
+            )
+        raw = psycopg2.connect(db_url)
+        return _PGCompatConnection(raw)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
+_SQLITE_SCHEMA = """
+    CREATE TABLE IF NOT EXISTS candidates (
+        candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        staff_number TEXT UNIQUE NOT NULL,
+        full_name TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS training_sessions (
+        session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sim_id TEXT,
+        session_mode TEXT,
+        captain_candidate_id INTEGER REFERENCES candidates(candidate_id),
+        fo_candidate_id INTEGER REFERENCES candidates(candidate_id),
+        total_dod INTEGER,
+        max_dod_threshold INTEGER,
+        source_workflow TEXT NOT NULL DEFAULT 'session_setup',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS session_slots (
+        slot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL REFERENCES training_sessions(session_id) ON DELETE CASCADE,
+        slot_number INTEGER NOT NULL,
+        event_title TEXT NOT NULL,
+        phase_number INTEGER,
+        dod INTEGER,
+        role_focus TEXT,
+        instructor_grade INTEGER,
+        instructor_notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS slot_competency_grades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slot_id INTEGER NOT NULL REFERENCES session_slots(slot_id) ON DELETE CASCADE,
+        competency_code TEXT NOT NULL,
+        grade INTEGER,
+        observed INTEGER NOT NULL DEFAULT 1,
+        note TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_capt ON training_sessions(captain_candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_fo ON training_sessions(fo_candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_slots_session ON session_slots(session_id);
+    CREATE INDEX IF NOT EXISTS idx_comp_grades_slot ON slot_competency_grades(slot_id);
+"""
+
+# Same shape as _SQLITE_SCHEMA, translated to Postgres dialect:
+# AUTOINCREMENT -> SERIAL, datetime('now') default -> NOW(), and
+# TIMESTAMPTZ instead of a plain TEXT timestamp column.
+_POSTGRES_SCHEMA = """
+    CREATE TABLE IF NOT EXISTS candidates (
+        candidate_id SERIAL PRIMARY KEY,
+        staff_number TEXT UNIQUE NOT NULL,
+        full_name TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS training_sessions (
+        session_id SERIAL PRIMARY KEY,
+        sim_id TEXT,
+        session_mode TEXT,
+        captain_candidate_id INTEGER REFERENCES candidates(candidate_id),
+        fo_candidate_id INTEGER REFERENCES candidates(candidate_id),
+        total_dod INTEGER,
+        max_dod_threshold INTEGER,
+        source_workflow TEXT NOT NULL DEFAULT 'session_setup',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS session_slots (
+        slot_id SERIAL PRIMARY KEY,
+        session_id INTEGER NOT NULL REFERENCES training_sessions(session_id) ON DELETE CASCADE,
+        slot_number INTEGER NOT NULL,
+        event_title TEXT NOT NULL,
+        phase_number INTEGER,
+        dod INTEGER,
+        role_focus TEXT,
+        instructor_grade INTEGER,
+        instructor_notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS slot_competency_grades (
+        id SERIAL PRIMARY KEY,
+        slot_id INTEGER NOT NULL REFERENCES session_slots(slot_id) ON DELETE CASCADE,
+        competency_code TEXT NOT NULL,
+        grade INTEGER,
+        observed INTEGER NOT NULL DEFAULT 1,
+        note TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_capt ON training_sessions(captain_candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_fo ON training_sessions(fo_candidate_id);
+    CREATE INDEX IF NOT EXISTS idx_slots_session ON session_slots(session_id);
+    CREATE INDEX IF NOT EXISTS idx_comp_grades_slot ON slot_competency_grades(slot_id);
+"""
+
+
 def init_db():
     conn = get_db_connection()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS candidates (
-            candidate_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            staff_number TEXT UNIQUE NOT NULL,
-            full_name TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS training_sessions (
-            session_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sim_id TEXT,
-            session_mode TEXT,
-            captain_candidate_id INTEGER REFERENCES candidates(candidate_id),
-            fo_candidate_id INTEGER REFERENCES candidates(candidate_id),
-            total_dod INTEGER,
-            max_dod_threshold INTEGER,
-            source_workflow TEXT NOT NULL DEFAULT 'session_setup',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS session_slots (
-            slot_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id INTEGER NOT NULL REFERENCES training_sessions(session_id) ON DELETE CASCADE,
-            slot_number INTEGER NOT NULL,
-            event_title TEXT NOT NULL,
-            phase_number INTEGER,
-            dod INTEGER,
-            role_focus TEXT,
-            instructor_grade INTEGER,
-            instructor_notes TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS slot_competency_grades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            slot_id INTEGER NOT NULL REFERENCES session_slots(slot_id) ON DELETE CASCADE,
-            competency_code TEXT NOT NULL,
-            grade INTEGER,
-            observed INTEGER NOT NULL DEFAULT 1,
-            note TEXT
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_sessions_capt ON training_sessions(captain_candidate_id);
-        CREATE INDEX IF NOT EXISTS idx_sessions_fo ON training_sessions(fo_candidate_id);
-        CREATE INDEX IF NOT EXISTS idx_slots_session ON session_slots(session_id);
-        CREATE INDEX IF NOT EXISTS idx_comp_grades_slot ON slot_competency_grades(slot_id);
-    """)
+    conn.executescript(_POSTGRES_SCHEMA if using_postgres() else _SQLITE_SCHEMA)
     conn.commit()
     conn.close()
 
@@ -340,8 +566,8 @@ def save_session_to_history(existing_session_id, sim_id, session_mode, capt_staf
         if existing_session_id:
             conn.execute(
                 """UPDATE training_sessions SET sim_id=?, session_mode=?, captain_candidate_id=?, fo_candidate_id=?,
-                   total_dod=?, max_dod_threshold=?, updated_at=datetime('now') WHERE session_id=?""",
-                (sim_id, session_mode, capt_id, fo_id, total_dod, max_dod_threshold, existing_session_id)
+                   total_dod=?, max_dod_threshold=?, updated_at=? WHERE session_id=?""",
+                (sim_id, session_mode, capt_id, fo_id, total_dod, max_dod_threshold, datetime.now(timezone.utc).isoformat(), existing_session_id)
             )
             session_id = existing_session_id
             conn.execute("DELETE FROM session_slots WHERE session_id = ?", (session_id,))
@@ -1825,21 +2051,194 @@ def build_competency_venn_svg(sets_dict):
 
     return f'<svg width="100%" viewBox="0 0 680 {vh}">{circles}{text}</svg>'
 
-# ==========================================
-# NAVIGATION TABS
+
+@st.cache_data(show_spinner="Running data health checks...")
+def compute_data_health_report(scenarios_source, competency_source, scenario_obs_source,
+                                cache_token_a=None, cache_token_b=None, cache_token_c=None):
+    """Self-service version of the manual data-quality audit run by hand
+    during development (Keypams duplicate-flag collisions, OB-library
+    normalization collisions, generic-fallback coverage gaps, etc.) —
+    same checks, same thresholds, now a permanent feature instead of a
+    one-off script. Returns a dict of findings; render_data_health_tab()
+    below turns this into the actual UI. Cache-token params follow the
+    naming lesson from the ver32 fix: NEVER prefix these with an
+    underscore, or st.cache_data silently excludes them from the hash
+    and the whole point of passing them is lost.
+    """
+    report = {
+        "scenarios_ok": False, "scenarios_issues": [], "scenarios_count": 0,
+        "keypams_ok": False, "keypams_issues": [], "keypams_count": 0,
+        "obs_ok": False, "obs_issues": [], "obs_count": 0,
+        "coverage": None,
+    }
+
+    # ---------- Scenarios.csv ----------
+    scen_events = []  # list of (event_str, dod) for valid rows, in file order
+    if scenarios_source is not None:
+        try:
+            df_raw = pd.read_csv(scenarios_source, encoding="cp1252") if isinstance(scenarios_source, (str, os.PathLike)) else pd.read_csv(scenarios_source, encoding="cp1252")
+            for _, row in df_raw.iterrows():
+                event, dod = row.iloc[0], row.iloc[1]
+                if pd.isna(event) or pd.isna(dod) or len(str(event).strip()) <= 2:
+                    continue
+                scen_events.append((str(event).strip(), dod))
+            report["scenarios_count"] = len(scen_events)
+
+            seen = {}
+            for ev, dod in scen_events:
+                seen.setdefault(ev, []).append(dod)
+            dupes = {ev: dods for ev, dods in seen.items() if len(dods) > 1}
+            if dupes:
+                report["scenarios_issues"].append(("warn", f"{len(dupes)} event name(s) appear more than once: " + ", ".join(dupes.keys())))
+
+            ws_bad = [ev for ev, _ in scen_events if ev != ev.strip() or "  " in ev]
+            if ws_bad:
+                report["scenarios_issues"].append(("warn", f"{len(ws_bad)} event name(s) have stray whitespace: " + ", ".join(ws_bad)))
+
+            bad_dod = [ev for ev, dod in scen_events if not (pd.notna(dod) and 1 <= float(dod) <= 3)]
+            if bad_dod:
+                report["scenarios_issues"].append(("warn", f"{len(bad_dod)} row(s) have a DoD outside 1-3: " + ", ".join(bad_dod)))
+
+            report["scenarios_ok"] = True
+        except Exception as e:
+            report["scenarios_issues"].append(("error", f"Could not read Scenarios.csv: {e}"))
+
+    # ---------- Keypams.xlsx ----------
+    comp_lookup = {}
+    norm_keys = []
+    if competency_source is not None:
+        try:
+            df_comp = pd.read_excel(competency_source)
+            df_comp.columns = [str(c).strip() for c in df_comp.columns]
+            if "SA" in df_comp.columns and "SAW" not in df_comp.columns:
+                df_comp = df_comp.rename(columns={"SA": "SAW"})
+            comp_cols = [c for c in COMPETENCY_KEYS if c in df_comp.columns]
+            missing_comp_cols = [c for c in COMPETENCY_KEYS if c not in comp_cols]
+            if missing_comp_cols:
+                report["keypams_issues"].append(("info", f"No column for: {', '.join(missing_comp_cols)} — these competencies can never be flagged from Keypams alone, only from the OB library, dedicated exercises, or generic fallback."))
+            report["keypams_count"] = len(df_comp)
+
+            norm_to_originals = {}
+            for _, crow in df_comp.iterrows():
+                norm_k = _normalize_event_name(crow["Event"])
+                active = [c for c in comp_cols if pd.notna(crow[c]) and float(crow[c]) >= 1]
+                norm_to_originals.setdefault(norm_k, []).append((crow["Event"], active))
+                comp_lookup[norm_k] = active
+                norm_keys.append(norm_k)
+
+            for norm_k, variants in norm_to_originals.items():
+                if len(variants) > 1:
+                    flagsets = {tuple(sorted(a)) for _, a in variants}
+                    names = ", ".join(f'"{n}"' for n, _ in variants)
+                    if len(flagsets) > 1:
+                        report["keypams_issues"].append(("warn", f"{names} collide to the same lookup key with DIFFERENT competency flags — only the last one is ever used, the others' flags are silently discarded."))
+                    else:
+                        report["keypams_issues"].append(("info", f"{names} collide to the same lookup key but have identical flags — harmless."))
+
+            zero_flag = [crow["Event"] for _, crow in df_comp.iterrows() if not any(pd.notna(crow[c]) and float(crow[c]) >= 1 for c in comp_cols)]
+            if zero_flag:
+                report["keypams_issues"].append(("warn", f"{len(zero_flag)} row(s) have every competency flag blank/zero, so a match here contributes nothing: " + ", ".join(zero_flag)))
+
+            report["keypams_ok"] = True
+        except Exception as e:
+            report["keypams_issues"].append(("error", f"Could not read Keypams.xlsx: {e}"))
+
+    # ---------- Scenario_Observable_Behaviours.xlsx ----------
+    ob_library_for_coverage = {}
+    if scenario_obs_source is not None:
+        try:
+            df_obs = pd.read_excel(scenario_obs_source, sheet_name="Scenario OBs")
+            df_obs.columns = [str(c).strip() for c in df_obs.columns]
+            norm_to_originals = {}
+            filled_count = 0
+            for _, row in df_obs.iterrows():
+                event = row.get("EVENT")
+                if pd.isna(event) or str(event).strip().upper().startswith("EXAMPLE"):
+                    continue
+                obs_codes = []
+                partial = False
+                for i in (1, 2, 3, 4):
+                    comp, text, ref = row.get(f"OB{i}_COMPETENCY"), row.get(f"OB{i}_TEXT"), row.get(f"OB{i}_REF")
+                    present = [pd.notna(comp) and str(comp).strip() != "", pd.notna(text) and str(text).strip() != "", pd.notna(ref) and str(ref).strip() != ""]
+                    if any(present) and not all(present):
+                        partial = True
+                    if all(present):
+                        comp_clean = str(comp).strip().upper()
+                        if comp_clean not in COMPETENCY_KEYS:
+                            report["obs_issues"].append(("warn", f'"{event}" OB{i} uses an unrecognized competency code "{comp}".'))
+                        else:
+                            obs_codes.append(comp_clean)
+                if partial:
+                    report["obs_issues"].append(("warn", f'"{event}" has an OB slot with only some of competency/text/ref filled in — treated as if that slot were blank.'))
+                pta = row.get("PTA")
+                has_pta = pd.notna(pta) and str(pta).strip() != ""
+                if has_pta:
+                    filled_count += 1
+                if has_pta and not obs_codes:
+                    report["obs_issues"].append(("warn", f'"{event}" has a PTA but no valid Observable Behaviours — won\'t register as covered.'))
+                if obs_codes:
+                    norm_k = _normalize_event_name(event)
+                    norm_to_originals.setdefault(norm_k, []).append(event)
+                    ob_library_for_coverage[norm_k] = event
+
+            report["obs_count"] = filled_count
+            for norm_k, names in norm_to_originals.items():
+                if len(names) > 1:
+                    report["obs_issues"].append(("info" , f"{', '.join(repr(n) for n in names)} collide to the same lookup key — only one is ever used at runtime. Check they're meant to be identical."))
+
+            report["obs_ok"] = True
+        except Exception as e:
+            report["obs_issues"].append(("error", f"Could not read Scenario_Observable_Behaviours.xlsx: {e}"))
+
+    # ---------- Coverage breakdown (mirrors resolve_competencies' priority order) ----------
+    if scen_events:
+        tiers = {"keyword": [], "obs_library": [], "keypams": [], "none": []}
+        unique_events = list(dict.fromkeys(ev for ev, _ in scen_events))
+        for ev in unique_events:
+            ev_upper = ev.replace("\xa0", " ").upper()
+            if any(any(kw in ev_upper for kw in exd["keywords"]) for exk, exd in PROGRAM_SYLLABUS_EXERCISES.items() if exk != "EX-00_GENERIC"):
+                tiers["keyword"].append(ev)
+                continue
+            norm_ev = _normalize_event_name(ev)
+            if norm_ev in ob_library_for_coverage or (ob_library_for_coverage and difflib.get_close_matches(norm_ev, list(ob_library_for_coverage.keys()), n=1, cutoff=0.72)):
+                tiers["obs_library"].append(ev)
+                continue
+            hit = comp_lookup.get(norm_ev)
+            if hit is None and norm_keys:
+                tokens_ev = set(norm_ev.split())
+                for k in norm_keys:
+                    tokens_k = set(k.split())
+                    inter = tokens_ev & tokens_k
+                    if len(inter) >= 2 and len(inter) / max(len(tokens_ev), len(tokens_k)) > 0.45:
+                        hit = comp_lookup[k]
+                        break
+            if hit is None and norm_keys:
+                close = difflib.get_close_matches(norm_ev, norm_keys, n=1, cutoff=0.5)
+                if close:
+                    hit = comp_lookup[close[0]]
+            if hit:
+                tiers["keypams"].append(ev)
+            else:
+                tiers["none"].append(ev)
+        report["coverage"] = tiers
+
+    return report
+
+
 # (tabs are created here, but only their labels/order are fixed by this
 # call — the tab_session/tab_env split below runs their *bodies* wherever
 # execution order actually requires, same pattern already used for
 # tab_selector/tab_sql_schema elsewhere in this file.)
 # ==========================================
-tab_session, tab_env, tab_orca, tab_selector, tab_standard, tab_debrief, tab_history = st.tabs([
+tab_session, tab_env, tab_orca, tab_selector, tab_standard, tab_debrief, tab_history, tab_health = st.tabs([
     "SES · Session Setup",
     "ENV · Environment & IOS",
     "ORC · OPC & ORCA Workflow",
     "SCN · Scenario Selector",
     "GRD · Grading Standard",
     "DBF · Session Debrief",
-    "HST · Candidate History"
+    "HST · Candidate History",
+    "HLT · Data Health"
 ])
 
 # SLOT CONFIGURATION & DATA SOURCES
@@ -2368,6 +2767,11 @@ with tab_history:
         "Session Setup and Uploaded Syllabus workflows. This is a **local field-testing log**, not a "
         "replacement for any official system of record."
     )
+    if using_postgres():
+        st.markdown(f"<div class='ds-row'><span>History storage</span><span class='ds-status-loaded'>POSTGRES (SUPABASE)</span></div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<div class='ds-row'><span>History storage</span><span class='ds-status-optional'>LOCAL SQLITE — NOT PERSISTENT ON STREAMLIT CLOUD</span></div>", unsafe_allow_html=True)
+        st.caption("Add SUPABASE_DB_URL to this app's Streamlit secrets to move history to a persistent hosted database — a local SQLite file here can be wiped on any Streamlit Cloud reboot/redeploy.")
     lookup_staff_no = st.text_input("Staff Number", value="", placeholder="e.g. KM10234", key="history_lookup_staff_no")
     if lookup_staff_no.strip():
         candidate_info, grade_rows = get_candidate_history(lookup_staff_no)
@@ -2711,6 +3115,80 @@ with tab_session:
             st.caption(f"✓ Saved to history database (session #{saved_session_id}, linked to staff number).")
         else:
             st.caption(f"✓ Saved to history database (session #{saved_session_id}) — add a Captain/F.O. staff number above to make this retrievable by candidate history.")
+
+with tab_health:
+    st.markdown("#### 🩺 Data Health Check")
+    st.caption("Runs the same audit previously done by hand on Scenarios.csv, Keypams.xlsx, and Scenario_Observable_Behaviours.xlsx — duplicate/collision detection, dead rows, and a real coverage breakdown. Re-runs automatically whenever any of the three files change.")
+
+    health = compute_data_health_report(
+        scenarios_source, competency_source, scenario_obs_source,
+        _file_cache_token(scenarios_source), _file_cache_token(competency_source), _file_cache_token(scenario_obs_source),
+    )
+
+    def _render_issue_list(issues, empty_message):
+        if not issues:
+            st.markdown(f"<div class='status-badge-ok' style='display:inline-block;'>✓ {empty_message}</div>", unsafe_allow_html=True)
+            return
+        for severity, msg in issues:
+            icon = {"error": "🔴", "warn": "🟠", "info": "⚪"}.get(severity, "⚪")
+            st.markdown(f"<div class='ds-row' style='font-weight:400;'>{icon}&nbsp; {msg}</div>", unsafe_allow_html=True)
+
+    hcol1, hcol2 = st.columns(2)
+    with hcol1:
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>CSV</span><span class='panel-title-text'>Scenarios.csv</span></div>", unsafe_allow_html=True)
+            if health["scenarios_ok"]:
+                st.caption(f"{health['scenarios_count']} valid scenario rows checked.")
+                _render_issue_list(health["scenarios_issues"], "No duplicates, whitespace issues, or DoD range problems found.")
+            else:
+                st.info("Not loaded — nothing to check yet.")
+
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>XLS</span><span class='panel-title-text'>Scenario Observable Behaviours</span></div>", unsafe_allow_html=True)
+            if health["obs_ok"]:
+                st.caption(f"{health['obs_count']} filled rows checked.")
+                _render_issue_list(health["obs_issues"], "No collisions, partial fills, or invalid competency codes found.")
+            else:
+                st.info("Not loaded (optional file) — nothing to check yet.")
+
+    with hcol2:
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>XLS</span><span class='panel-title-text'>Keypams.xlsx</span></div>", unsafe_allow_html=True)
+            if health["keypams_ok"]:
+                st.caption(f"{health['keypams_count']} rows checked.")
+                _render_issue_list(health["keypams_issues"], "No duplicate/collision or dead-flag rows found.")
+            else:
+                st.info("Not loaded (optional file) — nothing to check yet.")
+
+        with st.container(border=True):
+            st.markdown("<div class='panel-head'><span class='panel-code'>COV</span><span class='panel-title-text'>Real Coverage Breakdown</span></div>", unsafe_allow_html=True)
+            cov = health["coverage"]
+            if cov:
+                total = sum(len(v) for v in cov.values())
+                st.caption(f"How each of the {total} distinct scenarios actually gets its competencies, in priority order.")
+                labels = [
+                    ("keyword", "Dedicated hand-built exercises"),
+                    ("obs_library", "Scenario Observable Behaviours"),
+                    ("keypams", "Keypams.xlsx"),
+                    ("none", "Nothing — generic ATA-family fallback"),
+                ]
+                for key, label in labels:
+                    n = len(cov[key])
+                    pct = (n / total * 100) if total else 0
+                    bar_color = KM_GREEN if key != "none" else KM_AMBER
+                    st.markdown(
+                        f"<div style='margin-bottom:6px;'><div style='display:flex; justify-content:space-between; font-size:12px;'>"
+                        f"<span>{label}</span><span style='color:{bar_color}; font-weight:700;'>{n} ({pct:.0f}%)</span></div>"
+                        f"<div style='background:{KM_PANEL_ALT}; border-radius:4px; height:6px; margin-top:3px;'>"
+                        f"<div style='background:{bar_color}; width:{pct:.0f}%; height:6px; border-radius:4px;'></div></div></div>",
+                        unsafe_allow_html=True,
+                    )
+                if cov["none"]:
+                    with st.expander(f"See the {len(cov['none'])} event(s) with no specific data anywhere"):
+                        for ev in cov["none"]:
+                            st.markdown(f"- {ev}")
+            else:
+                st.info("Load Scenarios.csv to see a coverage breakdown.")
 
 with tab_orca:
     st.markdown("#### 📋 OPC & ORCA Workflow Suite (Uploaded Syllabus Analysis & Debrief)")
