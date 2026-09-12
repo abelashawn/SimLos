@@ -5,3 +5,4 @@ reportlab
 pypdf
 psycopg2-binary
 matplotlib
+numpy
