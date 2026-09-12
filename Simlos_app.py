@@ -25,9 +25,16 @@ try:
 except ImportError:
     HAS_PYPDF = False
 
+try:
+    import matplotlib.pyplot as plt
+    import numpy as np
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
 # ReportLab imports for PDF briefing generation
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -279,6 +286,18 @@ def get_candidate_history(staff_number):
 st.set_page_config(page_title="EBT Session Optimizer", page_icon="✈️", layout="wide")
 
 init_db()
+
+# --- NEW: ORCA State Persistence ---
+if "orca_state" not in st.session_state:
+    st.session_state.orca_state = {}
+
+def update_orca_state(key, value_attr=None):
+    """Callback to lock ORCA widget inputs into persistent state immediately."""
+    if value_attr:
+        st.session_state.orca_state[key] = st.session_state[value_attr]
+    else:
+        st.session_state.orca_state[key] = st.session_state[key]
+# -----------------------------------
 
 if "theme" not in st.session_state:
     st.session_state.theme = "dark"
@@ -1171,6 +1190,32 @@ def fetch_live_metar(icao_code):
             return metar if metar else "No live METAR data returned."
     except Exception: return "METAR connection unavailable (offline mode)."
 
+def parse_metar_to_ios(metar_str):
+    """Extracts wind, temp, and QNH from a raw METAR string."""
+    parsed = {}
+    if not metar_str or "offline" in metar_str.lower() or "No live" in metar_str:
+        return parsed
+        
+    # Wind: e.g., 31015G25KT or VRB05KT
+    wind_match = re.search(r'\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b', metar_str)
+    if wind_match:
+        parsed['dir'] = 0 if wind_match.group(1) == 'VRB' else int(wind_match.group(1))
+        parsed['spd'] = int(wind_match.group(2))
+        parsed['gust'] = int(wind_match.group(3)) if wind_match.group(3) else 0
+
+    # Temp: e.g., 14/08 or M02/M05
+    temp_match = re.search(r'\b(M?\d{2})/(M?\d{2})\b', metar_str)
+    if temp_match:
+        t_str = temp_match.group(1)
+        parsed['temp'] = -int(t_str[1:]) if t_str.startswith('M') else int(t_str)
+
+    # QNH: e.g., Q1013 or A2992
+    qnh_match = re.search(r'\bQ(\d{4})\b', metar_str)
+    if qnh_match:
+        parsed['qnh'] = int(qnh_match.group(1))
+        
+    return parsed
+
 def derive_tem_tags(event_title, phase_num, w_spd, w_gust, rcam, vis):
     threats, errors = [], []
     if w_spd > 20 or w_gust > 25: threats.append("High Surface Wind / Gusts")
@@ -1845,11 +1890,54 @@ if _page == "session":
             st.session_state.slot_competencies = {}
             st.session_state.trigger_generation = False
             st.session_state.db_session_id = None
+            
+            # --- NEW: EASA Compliance Matrix ---
+            def evaluate_easa_compliance(session_df, total_dod, max_dod):
+                flags = []
+                phases_present = session_df["PHASES"].tolist()
+                
+                # Check Core Phase Distribution (Takeoff, Approach/Landing)
+                if not any(p in [1, 2] for p in phases_present):
+                    flags.append("Missing Phase 1/2 (Pre-flight / Take-off) module.")
+                if not any(p in [6, 7] for p in phases_present):
+                    flags.append("Missing Phase 6/7 (Approach / Landing) module.")
+                    
+                # Check Key CBTA Competency Targets
+                all_comps = set(c for comp_list in session_df["COMPETENCIES"] for c in comp_list)
+                if "FPM" not in all_comps and "FPA" not in all_comps:
+                    flags.append("Flight Path Management (FPM/FPA) is not actively targeted in this session.")
+                if "PSD" not in all_comps and "WLM" not in all_comps:
+                    flags.append("No active targeting of Problem Solving & Decision Making (PSD) or Workload Management (WLM).")
+                    
+                # Check DOD Thresholds
+                if total_dod > max_dod:
+                    flags.append(f"Total DOD ({total_dod}) exceeds the recommended maximum ceiling ({max_dod}) for a single evaluation phase.")
+                elif total_dod < (max_dod * 0.5):
+                    flags.append(f"Total DOD ({total_dod}) is unusually low, risking insufficient evidence gathering.")
+                    
+                return flags
+                
+            st.session_state.compliance_flags = evaluate_easa_compliance(
+                st.session_state.final_df, 
+                st.session_state.final_df["DOD"].sum(), 
+                max_dod_threshold
+            )
+            # -----------------------------------
+            
             st.session_state.just_generated = True
             st.rerun()
 
     if st.session_state.pop("just_generated", False):
         st.success("Session Profile Generated!")
+        
+        # Display Compliance Matrix
+        c_flags = st.session_state.get("compliance_flags", [])
+        if not c_flags:
+            st.markdown("<div class='status-badge-ok'>✓ EASA AMC1 ORO.FC.231 Assessment Structure: COMPLIANT</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='status-badge-warn'>⚠️ EASA AMC1 ORO.FC.231 Structure Warnings:</div>", unsafe_allow_html=True)
+            for flag in c_flags:
+                st.markdown(f"<div style='font-size:12px; color:{KM_AMBER}; margin-left:14px;'>• {flag}</div>", unsafe_allow_html=True)
 
 
 # Persist the km-header block at the very top of EVERY page, including the splash screen
@@ -1932,6 +2020,49 @@ def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F0F4F8')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#0284C7')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('BOTTOMPADDING', (0, 0), (-1, -1), 3), ('TOPPADDING', (0, 0), (-1, -1), 3), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
     ]))
+    
+    # --- NEW: Generate and Embed Radar Chart ---
+    if HAS_MATPLOTLIB and comp_dict:
+        # Calculate session averages for the chart
+        comp_totals = {c: [] for c in COMPETENCY_KEYS}
+        for s_id, comps in comp_dict.items():
+            g = grades_dict.get(s_id, 3)
+            for c in comps:
+                if c in comp_totals:
+                    comp_totals[c].append(g)
+        
+        avgs = {c: (sum(v)/len(v) if v else 0) for c, v in comp_totals.items()}
+        labels = list(avgs.keys())
+        values = list(avgs.values())
+        
+        if any(values):
+            # Close the polygon
+            values += values[:1]
+            angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+            angles += angles[:1]
+            
+            fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
+            ax.fill(angles, values, color='#0284C7', alpha=0.25)
+            ax.plot(angles, values, color='#0284C7', linewidth=2)
+            ax.set_ylim(0, 5)
+            ax.set_xticks(angles[:-1])
+            ax.set_xticklabels(labels, fontsize=8)
+            ax.set_yticks([1, 2, 3, 4, 5])
+            ax.set_yticklabels(['1', '2', '3', '4', '5'], color="grey", size=7)
+            plt.title("Session Competency Profile", size=10, color="#0284C7", y=1.1)
+            
+            # Save to memory buffer
+            chart_buffer = io.BytesIO()
+            plt.savefig(chart_buffer, format='png', bbox_inches='tight', dpi=150)
+            chart_buffer.seek(0)
+            plt.close(fig)
+            
+            # Append to PDF elements
+            elements.append(Spacer(1, 10))
+            elements.append(Image(chart_buffer, width=250, height=250))
+            elements.append(Spacer(1, 10))
+    # -------------------------------------------
+    
     elements.extend([t])
     doc.build(elements)
     buffer.seek(0)
@@ -2064,21 +2195,30 @@ if _page == "session":
         live_metar_str = fetch_live_metar(apt_data['icao'])
         st.markdown(f'<div class="ios-card" style="border-left: 3px solid #0284C7;"><div class="ios-label">Live METAR Feed ({apt_data["icao"]})</div><div style="font-family: \'Geist Mono\', monospace; color: #0284C7; font-size: 13px; margin-top: 4px;">{live_metar_str}</div></div>', unsafe_allow_html=True)
 
+        # --- NEW: Parse METAR for defaults ---
+        metar_data = parse_metar_to_ios(live_metar_str)
+        default_dir = metar_data.get('dir', 360)
+        default_spd = metar_data.get('spd', 0)
+        default_gust = metar_data.get('gust', 0)
+        default_temp = metar_data.get('temp', 14)
+        default_qnh = metar_data.get('qnh', 1013)
+        # -------------------------------------
+
         w_card1, w_card2 = st.columns(2)
         with w_card1:
             st.markdown("<b style='color:#0284C7;'>🌬️ Surface Wind & Atmosphere</b>", unsafe_allow_html=True)
             wc1, wc2, wc3 = st.columns(3)
-            with wc1: wind_dir = st.number_input("Wind Dir (°M)", min_value=0, max_value=360, value=360, step=10)
-            with wc2: wind_spd = st.number_input("Wind Speed (kt)", min_value=0, max_value=70, value=0)
-            with wc3: wind_gust = st.number_input("Wind Gust (kt)", min_value=0, max_value=90, value=0)
+            with wc1: wind_dir = st.number_input("Wind Dir (°M)", min_value=0, max_value=360, value=default_dir, step=10)
+            with wc2: wind_spd = st.number_input("Wind Speed (kt)", min_value=0, max_value=70, value=default_spd)
+            with wc3: wind_gust = st.number_input("Wind Gust (kt)", min_value=0, max_value=90, value=default_gust)
             wind_str = f"{wind_dir:03d}°M / {wind_spd} kt" + (f" G {wind_gust} kt" if wind_gust > 0 else "")
             tc1, tc2, tc3 = st.columns(3)
-            with tc1: oat_temp = st.number_input("Aircraft OAT (°C)", min_value=-40, max_value=50, value=14)
+            with tc1: oat_temp = st.number_input("Aircraft OAT (°C)", min_value=-40, max_value=50, value=default_temp)
             with tc2:
                 isa_standard = 15 - (2 * (apt_elev / 1000))
                 isa_dev_calc = int(oat_temp - isa_standard)
                 isa_dev = st.number_input("ISA Dev (°C)", min_value=-30, max_value=30, value=isa_dev_calc)
-            with tc3: qnh_weather = st.number_input("QNH Ref (hPa)", min_value=950, max_value=1050, value=1013)
+            with tc3: qnh_weather = st.number_input("QNH Ref (hPa)", min_value=950, max_value=1050, value=default_qnh)
 
         with w_card2:
             st.markdown("<b style='color:#0284C7;'>🌧️ Runway Surface & Visibility Parameters</b>", unsafe_allow_html=True)
@@ -2331,6 +2471,11 @@ if _page == "orca":
                         grade_key = f"orc_grade_{e_key}_{s_idx}_{ob_idx}"
                         note_key = f"orc_note_{e_key}_{s_idx}_{ob_idx}"
                         
+                        # --- NEW: Fetch persisted values or defaults ---
+                        is_obs = st.session_state.orca_state.get(obs_key, False)
+                        cur_grade = st.session_state.orca_state.get(grade_key, 3)
+                        cur_note = st.session_state.orca_state.get(note_key, "")
+                        
                         with st.container(border=True):
                             ob_row = st.columns([1.5, 1]) 
                             with ob_row[0]:
@@ -2338,11 +2483,11 @@ if _page == "orca":
                             with ob_row[1]:
                                 action_cols = st.columns([0.6, 1.2, 1.5])
                                 with action_cols[0]: 
-                                    observed = st.checkbox("Observed", key=obs_key, label_visibility="collapsed")
+                                    observed = st.checkbox("Observed", value=is_obs, key=obs_key, on_change=update_orca_state, args=(obs_key,), label_visibility="collapsed")
                                 with action_cols[1]: 
-                                    ob_grade = st.selectbox("Grade", options=[5, 4, 3, 2, 1], index=2, format_func=lambda x: f"{x} ({GRADE_LABELS[x]})", key=grade_key, disabled=not observed, label_visibility="collapsed")
+                                    ob_grade = st.selectbox("Grade", options=[5, 4, 3, 2, 1], index=[5,4,3,2,1].index(cur_grade), format_func=lambda x: f"{x} ({GRADE_LABELS[x]})", key=grade_key, on_change=update_orca_state, args=(grade_key,), disabled=not observed, label_visibility="collapsed")
                                 with action_cols[2]: 
-                                    st.text_input("Note", value="", key=note_key, disabled=not observed, label_visibility="collapsed", placeholder="Record notes...")
+                                    st.text_input("Note", value=cur_note, key=note_key, on_change=update_orca_state, args=(note_key,), disabled=not observed, label_visibility="collapsed", placeholder="Record notes...")
 
                 ex_ob_grades = []
                 for s_idx, step in enumerate(ex_data["sequence"]):
@@ -2696,5 +2841,3 @@ if _page == "debrief":
             else:
                 if st.button("📄  EXPORT BRIEFING PDF", type="primary"):
                     st.info("Build a session plan first to generate the PDF export.")
-
-
