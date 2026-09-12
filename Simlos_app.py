@@ -1602,25 +1602,48 @@ if _page != "splash":
     st.markdown("<div style='height:8px;'></div>",unsafe_allow_html=True)
 
 if _page == "splash":
-    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-    st.markdown("### ✈️ Welcome to the Optimizer")
-    st.markdown("The aim of this program is twofold:")
-    st.markdown("""
-    **A. Create a Session from Scratch**
-    Generate an EBT session by defining phases, DOD levels, and required competencies. The engine will select appropriate independent/random failures.
-    
-    **B. Use an Existing Program**
-    Upload your operator simulator syllabus PDF, parse it, and extract the exercises in order to conduct a standardised OB and ORCA workflow.
-    """)
-    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-    c_btn1, c_btn2, _ = st.columns([1, 1, 2])
-    with c_btn1:
-        if st.button("⚙️ Generate EBT Program", type="primary"):
+    st.markdown(f"""
+    <div style="background: {KM_PANEL}; border: 1px solid {KM_BORDER}; border-radius: 12px; padding: 28px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+            <div style="font-size: 36px; background: {KM_AMBER_DIM}; padding: 12px; border-radius: 10px; border: 1px solid rgba(245,166,35,0.3);">✈️</div>
+            <div>
+                <h1 style="margin: 0; font-size: 22px; color: {KM_TEXT};">SymSync Flight Operations & Simulator Suite</h1>
+                <p style="margin: 4px 0 0 0; color: {KM_TEXT_MUTED}; font-size: 13px;">Evidence-Based Training (EBT) & Competency-Based Training and Assessment (CBTA) Management Platform</p>
+            </div>
+        </div>
+        <div style="height: 1px; background: {KM_BORDER}; margin: 16px 0;"></div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px;">
+            <div style="background: {KM_PANEL_ALT}; border: 1px solid {KM_BORDER}; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="font-size: 28px; color: {KM_AMBER};">⚙️</div>
+                <div style="font-size: 11px; color: {KM_AMBER}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">1. Generate Program</div>
+                <div style="font-size: 12px; color: {KM_TEXT_MUTED};">Configure slots, phase distribution, and generate EASA-compliant session plans instantly.</div>
+            </div>
+            <div style="background: {KM_PANEL_ALT}; border: 1px solid {KM_BORDER}; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="font-size: 28px; color: {KM_GREEN};">📥</div>
+                <div style="font-size: 11px; color: {KM_GREEN}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">2. ORCA & Upload</div>
+                <div style="font-size: 12px; color: {KM_TEXT_MUTED};">Upload custom syllabi, run automated parsing, and track Observable Behaviours (OBs).</div>
+            </div>
+            <div style="background: {KM_PANEL_ALT}; border: 1px solid {KM_BORDER}; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="font-size: 28px; color: #0284C7;">📊</div>
+                <div style="font-size: 11px; color: #0284C7; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">3. Debrief & Export</div>
+                <div style="font-size: 12px; color: {KM_TEXT_MUTED};">Analyze competency radar profiles, record instructor grades, and export official PDF reports.</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    qc1, qc2, qc3 = st.columns(3)
+    with qc1:
+        if st.button("🚀  Launch Program Generator", key="splash_btn_gen", use_container_width=True):
             st.session_state.nav_page = "session"
             st.rerun()
-    with c_btn2:
-        if st.button("📥 Upload Existing Program"):
+    with qc2:
+        if st.button("📥  Open ORCA & Upload Suite", key="splash_btn_orca", use_container_width=True):
             st.session_state.nav_page = "orca"
+            st.rerun()
+    with qc3:
+        if st.button("📊  View Session Debrief", key="splash_btn_deb", use_container_width=True):
+            st.session_state.nav_page = "debrief"
             st.rerun()
 
 # ==========================================
@@ -1946,13 +1969,18 @@ _draft_active = ("final_df" in st.session_state) and not st.session_state.get("d
 _synced_active = bool(st.session_state.get("db_session_id"))
 _session_label = f"S-{st.session_state['db_session_id']}" if st.session_state.get("db_session_id") else "DRAFT"
 
+_data_ok = df is not None and not df.empty
+_draft_active = ("final_df" in st.session_state) and not st.session_state.get("db_session_id")
+_synced_active = bool(st.session_state.get("db_session_id"))
+_session_label = f"S-{st.session_state['db_session_id']}" if st.session_state.get("db_session_id") else "DRAFT"
+
 header_placeholder.markdown(f"""
 <div class="km-header">
     <div class="km-header-left">
         <div class="km-logo">✈️</div>
         <div>
-            <div class="km-title">EBT SESSION OPTIMIZER</div>
-            <div class="km-subtitle">{st.session_state.get('aircraft_type', 'A320-214')} · {st.session_state.get('session_mode', 'EBT Evaluation & Coaching')} · {st.session_state.get('program_code', 'EBT-2026')}</div>
+            <div class="km-title">SYMSYNC &bull; EBT SUITE</div>
+            <div class="km-subtitle">{st.session_state.get('aircraft_type', 'A320-214')} &middot; {st.session_state.get('session_mode', 'EBT Evaluation & Coaching')} &middot; {st.session_state.get('program_code', 'EBT-2026')}</div>
         </div>
     </div>
     <div class="km-header-right">
@@ -2208,17 +2236,19 @@ if _page == "session":
         with w_card1:
             st.markdown("<b style='color:#0284C7;'>🌬️ Surface Wind & Atmosphere</b>", unsafe_allow_html=True)
             wc1, wc2, wc3 = st.columns(3)
-            with wc1: wind_dir = st.number_input("Wind Dir (°M)", min_value=0, max_value=360, value=default_dir, step=10)
-            with wc2: wind_spd = st.number_input("Wind Speed (kt)", min_value=0, max_value=70, value=default_spd)
-            with wc3: wind_gust = st.number_input("Wind Gust (kt)", min_value=0, max_value=90, value=default_gust)
+            # Binding the widget keys to the ICAO forces Streamlit to accept the new defaults
+            with wc1: wind_dir = st.number_input("Wind Dir (°M)", min_value=0, max_value=360, value=default_dir, step=10, key=f"wdir_{apt_data['icao']}")
+            with wc2: wind_spd = st.number_input("Wind Speed (kt)", min_value=0, max_value=70, value=default_spd, key=f"wspd_{apt_data['icao']}")
+            with wc3: wind_gust = st.number_input("Wind Gust (kt)", min_value=0, max_value=90, value=default_gust, key=f"wgust_{apt_data['icao']}")
             wind_str = f"{wind_dir:03d}°M / {wind_spd} kt" + (f" G {wind_gust} kt" if wind_gust > 0 else "")
+            
             tc1, tc2, tc3 = st.columns(3)
-            with tc1: oat_temp = st.number_input("Aircraft OAT (°C)", min_value=-40, max_value=50, value=default_temp)
+            with tc1: oat_temp = st.number_input("Aircraft OAT (°C)", min_value=-40, max_value=50, value=default_temp, key=f"oat_{apt_data['icao']}")
             with tc2:
                 isa_standard = 15 - (2 * (apt_elev / 1000))
                 isa_dev_calc = int(oat_temp - isa_standard)
-                isa_dev = st.number_input("ISA Dev (°C)", min_value=-30, max_value=30, value=isa_dev_calc)
-            with tc3: qnh_weather = st.number_input("QNH Ref (hPa)", min_value=950, max_value=1050, value=default_qnh)
+                isa_dev = st.number_input("ISA Dev (°C)", min_value=-30, max_value=30, value=isa_dev_calc, key=f"isa_{apt_data['icao']}")
+            with tc3: qnh_weather = st.number_input("QNH Ref (hPa)", min_value=950, max_value=1050, value=default_qnh, key=f"qnh_{apt_data['icao']}")
 
         with w_card2:
             st.markdown("<b style='color:#0284C7;'>🌧️ Runway Surface & Visibility Parameters</b>", unsafe_allow_html=True)
