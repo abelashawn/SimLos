@@ -283,21 +283,19 @@ def get_candidate_history(staff_number):
 # ==========================================
 # PAGE CONFIG & HYBRID THEME STYLING
 # ==========================================
-st.set_page_config(page_title="EBT Session Optimizer", page_icon="✈️", layout="wide")
+st.set_page_config(page_title="SymSync EBT Suite", page_icon="✈️", layout="wide")
 
 init_db()
 
-# --- NEW: ORCA State Persistence ---
+# --- ORCA State Persistence ---
 if "orca_state" not in st.session_state:
     st.session_state.orca_state = {}
 
 def update_orca_state(key, value_attr=None):
-    """Callback to lock ORCA widget inputs into persistent state immediately."""
     if value_attr:
         st.session_state.orca_state[key] = st.session_state[value_attr]
     else:
         st.session_state.orca_state[key] = st.session_state[key]
-# -----------------------------------
 
 if "theme" not in st.session_state:
     st.session_state.theme = "dark"
@@ -327,7 +325,7 @@ else:
 
 st.markdown(f"""
 <style>
-    @import url('https://cdn.jsdelivr.net/npm/@fontsource/geist-mono/index.css');
+    @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600;700&display=swap');
 
     :root {{
         --text-color: {KM_TEXT} !important;
@@ -337,15 +335,23 @@ st.markdown(f"""
         --font: 'Geist Mono', monospace !important;
     }}
 
-    html, body, [class*="css"] {{
-        font-family: 'Geist Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace !important;
-        font-size: 14px !important;
+    html, body, [class*="css"], input, select, textarea, button {{
+        font-family: 'Geist Mono', monospace !important;
+        letter-spacing: -0.02em !important;
+        font-size: 13px !important;
+    }}
+
+    h1, h2, h3, h4, h5, h6 {{
+        font-family: 'Geist Mono', monospace !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.03em !important;
+        text-transform: uppercase;
+        color: {KM_TEXT} !important;
     }}
 
     [data-testid="stHeader"] {{ display: none !important; }}
     [data-testid="stToolbar"] {{ visibility: hidden !important; }}
     
-    /* OVERRIDE BOTH MAIN APP AND SIDEBAR TO FOLLOW TOGGLE STATE */
     .stApp, [data-testid="stAppViewContainer"] {{ 
         background-color: {KM_BG} !important; 
     }}
@@ -355,19 +361,16 @@ st.markdown(f"""
         border-right: 1px solid {KM_BORDER} !important;
     }}
 
-    /* Fix Streamlit native input widgets bleeding the dark config in light mode */
     .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {{
         background-color: {KM_PANEL_ALT} !important;
         color: {KM_TEXT} !important;
         border: 1px solid {KM_BORDER} !important;
-        opacity: 0.9;
+        border-radius: 4px !important;
+        font-size: 13px !important;
     }}
     .stTextInput input::placeholder {{
         color: {KM_TEXT_MUTED} !important;
         opacity: 0.6;
-    }}
-    [data-testid="stCheckbox"] {{
-        padding-top: 4px;
     }}
 
     .block-container {{
@@ -375,65 +378,20 @@ st.markdown(f"""
         padding-bottom: 1.0rem !important;
         max-width: 97% !important;
     }}
-    
-    p, li, span, label, div {{ color: {KM_TEXT}; }}
 
-    h1, h2, h3, h4 {{ color: {KM_TEXT} !important; font-weight: 700 !important; margin-top: 6px !important; margin-bottom: 6px !important;}}
-
-    .km-header {{
-        display: flex; align-items: center; justify-content: space-between;
-        background-color: {KM_PANEL}; border: 1px solid {KM_BORDER};
-        border-radius: 12px; padding: 14px 22px; margin-bottom: 14px; flex-wrap: wrap; gap: 14px;
+    div[data-testid="stVerticalBlockBorderWrapper"], div.stContainer, div[data-testid="stExpander"] {{
+        background-color: {KM_PANEL} !important;
+        border: 1px solid {KM_BORDER} !important;
+        border-radius: 6px !important;
     }}
-    .km-header-left {{ display: flex; align-items: center; gap: 14px; }}
-    .km-logo {{
-        width: 42px; height: 42px; border-radius: 10px; background: {KM_AMBER};
-        display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;
-    }}
-    .km-title {{ font-size: 16px; font-weight: 800; letter-spacing: 0.03em; color: {KM_TEXT}; line-height: 1.2; }}
-    .km-subtitle {{ font-size: 11.5px; color: {KM_TEXT_MUTED}; font-weight: 500; margin-top: 1px; }}
-    .km-header-right {{ display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }}
-    .km-meta {{ text-align: left; }}
-    .km-meta-label {{ font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: {KM_TEXT_MUTED}; font-weight: 700; }}
-    .km-meta-value {{ font-size: 13px; font-weight: 700; color: {KM_TEXT}; }}
-    .km-meta-value-accent {{ color: {KM_AMBER}; }}
-    .km-pills {{ display: flex; gap: 8px; }}
-    .km-pill {{
-        display: flex; align-items: center; gap: 6px; background-color: {KM_PANEL_ALT};
-        border: 1px solid {KM_BORDER}; border-radius: 20px; padding: 5px 11px;
-        font-size: 10px; font-weight: 700; letter-spacing: 0.05em; color: {KM_TEXT_MUTED};
-    }}
-    .km-dot {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; }}
-    .km-dot-green {{ background-color: {KM_GREEN}; }}
-    .km-dot-amber {{ background-color: {KM_AMBER}; }}
-    .km-dot-gray {{ background-color: {KM_GRAY_DOT}; }}
 
-    div[data-testid="stMetric"], .ios-card {{
-        background-color: {KM_PANEL} !important; border: 1px solid {KM_BORDER} !important;
-        border-radius: 10px !important; padding: 12px 16px !important;
-    }}
-    div[data-testid="stMetricLabel"] * {{ color: {KM_TEXT_MUTED} !important; font-weight: 700 !important; text-transform: uppercase; font-size: 10.5px !important; letter-spacing: 0.05em; }}
-    div[data-testid="stMetricValue"] * {{ color: {KM_TEXT} !important; font-weight: 800 !important; }}
-    [data-testid="stVerticalBlockBorderWrapper"] > div {{ background-color: {KM_PANEL}; border-radius: 10px; }}
-    div[data-testid="stExpander"] {{ background-color: {KM_PANEL} !important; border: 1px solid {KM_BORDER} !important; border-radius: 10px !important; }}
-
-    .ios-label {{ font-size: 11px; color: {KM_TEXT_MUTED}; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }}
-
-    .panel-head {{ display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }}
+    /* Restored Panel & Row Layouts */
+    .panel-head {{ display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }}
     .panel-code {{
         background-color: {KM_AMBER_DIM}; color: {KM_AMBER}; font-size: 10px; font-weight: 800;
         letter-spacing: 0.06em; padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(245,166,35,0.3);
     }}
     .panel-title-text {{ font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em; color: {KM_TEXT}; text-transform: uppercase; }}
-
-    .stat-label {{ font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.07em; color: {KM_TEXT_MUTED}; font-weight: 700; margin-bottom: 2px; }}
-    .stat-value {{ font-size: 17px; font-weight: 800; color: {KM_TEXT}; }}
-    .stat-value-accent {{ color: {KM_AMBER}; }}
-    .stat-value-green {{ color: {KM_GREEN}; }}
-
-    .comp-badge {{ display: inline-block; font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 5px; margin: 2px 4px 2px 0; letter-spacing: 0.03em; }}
-    .comp-badge-active {{ background-color: {KM_AMBER}; color: #1A1206; border: 1px solid {KM_AMBER}; }}
-    .comp-badge-inactive {{ background-color: transparent; color: {KM_GRAY_DOT}; border: 1px solid {KM_BORDER}; }}
 
     .ds-row {{
         display: flex; justify-content: space-between; align-items: center; padding: 9px 12px;
@@ -442,7 +400,7 @@ st.markdown(f"""
     .ds-status-loaded {{ color: {KM_GREEN}; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; }}
     .ds-status-optional {{ color: {KM_TEXT_MUTED}; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; }}
     .ds-detail {{ font-size: 10.5px; color: {KM_GREEN}; margin: -4px 0 7px 12px; }}
-    .doc-ref-row {{ font-size: 12px; color: {KM_TEXT_MUTED}; margin-bottom: 4px; }}
+    .doc-ref-row {{ font-size: 12px; color: {KM_TEXT_MUTED}; margin-bottom: 6px; }}
     .doc-ref-tag {{ color: {KM_AMBER}; font-weight: 700; }}
 
     .jepp-card {{
@@ -455,19 +413,20 @@ st.markdown(f"""
     .status-badge-warn {{ background-color: {KM_AMBER_DIM}; color: {KM_AMBER}; border: 1px solid rgba(245, 166, 35, 0.3); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-align: center; }}
 
     .stButton>button {{
-        background-color: transparent; color: {KM_TEXT}; border-radius: 7px; font-weight: 700;
-        border: 1px solid {KM_BORDER}; padding: 0.45rem 0.9rem; transition: all 0.15s ease;
+        font-family: 'Geist Mono', monospace !important;
+        background-color: transparent; color: {KM_TEXT}; border-radius: 4px; font-weight: 600;
+        border: 1px solid {KM_BORDER}; padding: 0.4rem 0.8rem; letter-spacing: -0.01em !important;
+        text-transform: uppercase; font-size: 12px !important; transition: all 0.15s ease;
     }}
     .stButton>button:hover {{ border-color: {KM_AMBER}; color: {KM_AMBER}; }}
-    .stButton>button[kind="primary"] {{ background-color: {KM_AMBER}; color: #1A1206; border: none; font-weight: 800; padding: 0.65rem 1rem; }}
-    .stButton>button[kind="primary"]:hover {{ background-color: #ffb945; color: #1A1206; transform: translateY(-1px); }}
+    .stButton>button[kind="primary"] {{ background-color: {KM_AMBER}; color: #1A1206; border: none; font-weight: 800; }}
+    .stButton>button[kind="primary"]:hover {{ background-color: #ffb945; color: #1A1206; }}
     .thin-divider {{ margin: 12px 0; border-bottom: 1px solid {KM_BORDER}; }}
     .ref-badge {{
         font-size: 10.5px; background-color: {KM_AMBER_DIM}; color: {KM_AMBER}; padding: 2px 6px;
         border-radius: 4px; margin-left: 6px; font-weight: 700; border: 1px solid rgba(245,166,35,0.3);
     }}
 
-    /* ── Metric cards (top of workflow pages) ── */
     .km-metric {{
         background: {KM_PANEL};
         border: 1px solid {KM_BORDER};
@@ -1191,29 +1150,21 @@ def fetch_live_metar(icao_code):
     except Exception: return "METAR connection unavailable (offline mode)."
 
 def parse_metar_to_ios(metar_str):
-    """Extracts wind, temp, and QNH from a raw METAR string."""
     parsed = {}
     if not metar_str or "offline" in metar_str.lower() or "No live" in metar_str:
         return parsed
-        
-    # Wind: e.g., 31015G25KT or VRB05KT
     wind_match = re.search(r'\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b', metar_str)
     if wind_match:
         parsed['dir'] = 0 if wind_match.group(1) == 'VRB' else int(wind_match.group(1))
         parsed['spd'] = int(wind_match.group(2))
         parsed['gust'] = int(wind_match.group(3)) if wind_match.group(3) else 0
-
-    # Temp: e.g., 14/08 or M02/M05
     temp_match = re.search(r'\b(M?\d{2})/(M?\d{2})\b', metar_str)
     if temp_match:
         t_str = temp_match.group(1)
         parsed['temp'] = -int(t_str[1:]) if t_str.startswith('M') else int(t_str)
-
-    # QNH: e.g., Q1013 or A2992
     qnh_match = re.search(r'\bQ(\d{4})\b', metar_str)
     if qnh_match:
         parsed['qnh'] = int(qnh_match.group(1))
-        
     return parsed
 
 def derive_tem_tags(event_title, phase_num, w_spd, w_gust, rcam, vis):
@@ -1267,43 +1218,6 @@ def build_ob_flow_html(sequence_data):
         if idx < n - 1: parts.append("<div style='text-align:center; font-size:16px; color:#0284C7; margin:2px 0 8px 0;'>&#8595;</div>")
     parts.append("</div>")
     return "".join(parts)
-
-def build_competency_venn_svg(sets_dict):
-    labels = list(sets_dict.keys())
-    n = len(labels)
-    if n not in (2, 3): return "<div style='font-size:12.5px; opacity:0.7;'>Select exactly 2 or 3 slots to compare.</div>"
-    colors = ["#378ADD", "#1D9E75", "#D85A30"]
-    if n == 2:
-        centers = [(220, 180), (340, 180)]
-        r = 130
-        A, B = sets_dict[labels[0]], sets_dict[labels[1]]
-        only_a, only_b, both = sorted(A - B), sorted(B - A), sorted(A & B)
-        circles = "".join(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{colors[i]}" fill-opacity="0.28" stroke="{colors[i]}" stroke-width="1"/>' for i, (cx, cy) in enumerate(centers))
-        text = (f'<text x="150" y="70" font-size="14" font-weight="600" fill="var(--text-color)">{labels[0]}</text>'
-                f'<text x="410" y="70" font-size="14" font-weight="600" fill="var(--text-color)" text-anchor="end">{labels[1]}</text>'
-                f'<text x="175" y="185" font-size="13" fill="var(--text-color)" text-anchor="middle">{", ".join(only_a) or "—"}</text>'
-                f'<text x="385" y="185" font-size="13" fill="var(--text-color)" text-anchor="middle">{", ".join(only_b) or "—"}</text>'
-                f'<text x="280" y="185" font-size="13" font-weight="700" fill="var(--text-color)" text-anchor="middle">{", ".join(both) or "—"}</text>')
-        vh = 280
-    else:
-        centers = [(270, 190), (410, 190), (340, 310)]
-        r = 130
-        A, B, C = sets_dict[labels[0]], sets_dict[labels[1]], sets_dict[labels[2]]
-        only_a, only_b, only_c = sorted(A - B - C), sorted(B - A - C), sorted(C - A - B)
-        ab, ac, bc, abc = sorted((A & B) - C), sorted((A & C) - B), sorted((B & C) - A), sorted(A & B & C)
-        circles = "".join(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{colors[i]}" fill-opacity="0.28" stroke="{colors[i]}" stroke-width="1"/>' for i, (cx, cy) in enumerate(centers))
-        text = (f'<text x="185" y="65" font-size="14" font-weight="600" fill="var(--text-color)">{labels[0]}</text>'
-                f'<text x="495" y="65" font-size="14" font-weight="600" fill="var(--text-color)" text-anchor="end">{labels[1]}</text>'
-                f'<text x="340" y="450" font-size="14" font-weight="600" fill="var(--text-color)" text-anchor="middle">{labels[2]}</text>'
-                f'<text x="220" y="175" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(only_a) or "—"}</text>'
-                f'<text x="460" y="175" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(only_b) or "—"}</text>'
-                f'<text x="340" y="390" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(only_c) or "—"}</text>'
-                f'<text x="340" y="150" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(ab) or "—"}</text>'
-                f'<text x="255" y="330" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(ac) or "—"}</text>'
-                f'<text x="425" y="330" font-size="12" fill="var(--text-color)" text-anchor="middle">{", ".join(bc) or "—"}</text>'
-                f'<text x="340" y="255" font-size="12" font-weight="700" fill="var(--text-color)" text-anchor="middle">{", ".join(abc) or "—"}</text>')
-        vh = 480
-    return f'<svg width="100%" viewBox="0 0 680 {vh}">{circles}{text}</svg>'
 
 def get_standard_phrase_options(grade):
     if grade not in STANDARD_PHRASE_BANK: return ["Custom (type below)"]
@@ -1363,7 +1277,6 @@ def extract_fcom_procedures(pdf_file):
             grouped[-1]["ident_codes"].append(b["ident_code"])
         else: grouped.append({"title": b["title"], "content": b["content"], "ident_codes": [b["ident_code"]]})
     return grouped
-
 
 _LESSON_ITEM_RE = re.compile(r"^\s*(\d{1,2})\s+(.{3,200})$")
 _LESSON_SECTION_START_RE = re.compile(r"EXPANDED DETAIL", re.IGNORECASE)
@@ -1535,7 +1448,6 @@ def compute_data_health_report(scenarios_source, competency_source, scenario_obs
 
     return report
 
-
 if "nav_page" not in st.session_state:
     st.session_state.nav_page = "splash"
 
@@ -1563,7 +1475,6 @@ with st.sidebar:
 
 _page = st.session_state.nav_page
 
-# Global Data Fetching Functions
 def resource_path(relative_path):
     try: base_path = sys._MEIPASS
     except Exception: base_path = os.path.dirname(os.path.abspath(__file__))
@@ -1584,22 +1495,71 @@ def source_display_name(source):
     if name: return os.path.basename(name)
     return os.path.basename(str(source))
 
+# Render Compact Top Instrument Strip Header on EVERY page
+_data_ok = True
+_draft_active = ("final_df" in st.session_state) and not st.session_state.get("db_session_id")
+_session_label = f"S-{st.session_state['db_session_id']}" if st.session_state.get("db_session_id") else "DRAFT"
 
-# Only draw top-level metrics/headers if we are not on the splash screen
+header_placeholder.markdown(f"""
+<div style="background: {KM_PANEL}; border: 1px solid {KM_BORDER}; border-radius: 8px; padding: 12px 18px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 12px;">
+    <div style="display: flex; align-items: center; gap: 10px; white-space: nowrap;">
+        <span style="font-size: 16px;">✈️</span>
+        <div>
+            <div style="font-size: 13px; font-weight: 800; color: {KM_TEXT}; letter-spacing: -0.02em;">SYMSYNC EBT</div>
+            <div style="font-size: 10px; color: {KM_TEXT_MUTED};">{st.session_state.get('aircraft_type', 'A320-214')}</div>
+        </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 20px; white-space: nowrap; font-size: 11px;">
+        <div>
+            <span style="font-size: 9px; color: {KM_TEXT_MUTED}; font-weight: 700; text-transform: uppercase; display: block;">Device</span>
+            <span style="font-weight: 700;">{st.session_state.get('sim_id', 'KM Malta')[:14]}</span>
+        </div>
+        <div>
+            <span style="font-size: 9px; color: {KM_TEXT_MUTED}; font-weight: 700; text-transform: uppercase; display: block;">Session</span>
+            <span style="font-weight: 700; color: {KM_AMBER};">{_session_label}</span>
+        </div>
+        <div>
+            <span style="font-size: 9px; color: {KM_TEXT_MUTED}; font-weight: 700; text-transform: uppercase; display: block;">Capt</span>
+            <span style="font-weight: 700;">{st.session_state.get('capt_name', 'Unassigned')[:10]}</span>
+        </div>
+        <div>
+            <span style="font-size: 9px; color: {KM_TEXT_MUTED}; font-weight: 700; text-transform: uppercase; display: block;">F/O</span>
+            <span style="font-weight: 700;">{st.session_state.get('fo_name', 'Unassigned')[:10]}</span>
+        </div>
+        <div style="display: flex; gap: 6px; padding-left: 6px; border-left: 1px solid {KM_BORDER};">
+            <span style="font-size: 9px; font-weight: 700; background: {KM_PANEL_ALT}; border: 1px solid {KM_BORDER}; padding: 3px 7px; border-radius: 4px; color: {KM_GREEN if _data_ok else KM_TEXT_MUTED};">● DATA</span>
+            <span style="font-size: 9px; font-weight: 700; background: {KM_PANEL_ALT}; border: 1px solid {KM_BORDER}; padding: 3px 7px; border-radius: 4px; color: {KM_AMBER if _draft_active else KM_TEXT_MUTED};">● DRAFT</span>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 if _page != "splash":
     _final_df = st.session_state.get("final_df")
-    _n_slots = len(st.session_state.get("slot_configurations_cache",[]))
+    _n_slots = len(st.session_state.get("slot_configurations_cache", []))
     _active_comps = set()
     if _final_df is not None and not _final_df.empty and "COMPETENCIES" in _final_df.columns:
         for _codes in _final_df["COMPETENCIES"]:
-            if isinstance(_codes,(list,tuple,set)): _active_comps.update(_codes)
-    _m1,_m2,_m3,_m4 = st.columns(4)
-    with _m1: st.markdown(f"<div class='km-metric'><div class='km-metric-lbl'>Slots</div><div class='km-metric-val'>{_n_slots:02d}</div><div class='km-metric-sub'>of 12 configured</div></div>",unsafe_allow_html=True)
-    with _m2: st.markdown(f"<div class='km-metric'><div class='km-metric-lbl'>Competencies</div><div class='km-metric-val'>{len(_active_comps)}/9</div><div class='km-metric-sub'>{' · '.join(sorted(_active_comps)) or 'Build plan to see'}</div></div>",unsafe_allow_html=True)
-    _smode_short = {"EBT Evaluation": "EBT", "OPC": "OPC", "LPC": "LPC", "LOE": "LOE", "OBT": "OBT"}.get(st.session_state.get("session_mode","EBT Evaluation"), st.session_state.get("session_mode","EBT")[:6])
-    with _m3: st.markdown(f"<div class='km-metric'><div class='km-metric-lbl'>Session Type</div><div class='km-metric-val'>{_smode_short}</div><div class='km-metric-sub'>{st.session_state.get('sim_id','Not set')}</div></div>",unsafe_allow_html=True)
-    with _m4: st.markdown(f"<div class='km-metric'><div class='km-metric-lbl'>OB Profiles</div><div class='km-metric-val'>{len(SCENARIO_OB_LIBRARY)}</div><div class='km-metric-sub'>scenario-specific</div></div>",unsafe_allow_html=True)
-    st.markdown("<div style='height:8px;'></div>",unsafe_allow_html=True)
+            if isinstance(_codes, (list, tuple, set)): _active_comps.update(_codes)
+    
+    st.markdown(f"""
+    <div style="background: {KM_PANEL}; border: 1px solid {KM_BORDER}; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
+        <div style="font-size: 10px; font-weight: 700; color: {KM_TEXT_MUTED}; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;">MISSION CONTROL TELEMETRY</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.container(border=True):
+        _m1, _m2, _m3, _m4 = st.columns(4)
+        with _m1: 
+            st.markdown(f"<div class='km-metric-lbl'>Slots</div><div class='km-metric-val'>{_n_slots:02d}</div><div class='km-metric-sub'>of 12 configured</div>", unsafe_allow_html=True)
+        with _m2: 
+            st.markdown(f"<div class='km-metric-lbl'>Competencies</div><div class='km-metric-val'>{len(_active_comps)}/9</div><div class='km-metric-sub'>{' · '.join(sorted(_active_comps)) or 'Build plan to see'}</div>", unsafe_allow_html=True)
+        _smode_short = {"EBT Evaluation": "EBT", "OPC": "OPC", "LPC": "LPC", "LOE": "LOE", "OBT": "OBT"}.get(st.session_state.get("session_mode", "EBT Evaluation"), st.session_state.get("session_mode", "EBT")[:6])
+        with _m3: 
+            st.markdown(f"<div class='km-metric-lbl'>Session Type</div><div class='km-metric-val'>{_smode_short}</div><div class='km-metric-sub'>{st.session_state.get('sim_id', 'Not set')[:16]}</div>", unsafe_allow_html=True)
+        with _m4: 
+            st.markdown(f"<div class='km-metric-lbl'>OB Profiles</div><div class='km-metric-val'>{len(SCENARIO_OB_LIBRARY)}</div><div class='km-metric-sub'>scenario-specific</div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
 if _page == "splash":
     st.markdown(f"""
@@ -1646,10 +1606,6 @@ if _page == "splash":
             st.session_state.nav_page = "debrief"
             st.rerun()
 
-# ==========================================
-# FILE UPLOADERS & GLOBAL DATA LOADING 
-# (Only drawn on "session" page, but cache persists)
-# ==========================================
 ds_status_placeholder = st.empty()
 
 if _page == "session":
@@ -1713,8 +1669,6 @@ if _page == "session":
         with ds_col:
             with st.container(border=True):
                 st.markdown("<div class='panel-head'><span class='panel-code'>CSV</span><span class='panel-title-text'>DATA SOURCES</span></div>", unsafe_allow_html=True)
-                
-                # Fetching Widgets (and caching to Session State if visible)
                 tmp_scen = st.file_uploader("Scenarios.csv", type=["csv"], label_visibility="collapsed")
                 tmp_comp = st.file_uploader("Keypams.xlsx (optional)", type=["xlsx"], label_visibility="collapsed")
                 tmp_obs = st.file_uploader("Scenario_Observable_Behaviours.xlsx (optional)", type=["xlsx"], label_visibility="collapsed")
@@ -1731,8 +1685,6 @@ if _page == "session":
                     st.markdown(f"<div class='doc-ref-row'><span class='doc-ref-tag'>[{tag}]</span> {title}</div>", unsafe_allow_html=True)
                 st.markdown("<div style='text-align: left; font-size: 10.5px; color: rgba(255,255,255,0.35); margin-top: 10px;'>Designed by Shawn Abela · v5.0 2026</div>", unsafe_allow_html=True)
 
-
-# Data Source variables mapped unconditionally using the cache
 uploaded_scen = st.session_state.get('up_scen_cache')
 uploaded_comp = st.session_state.get('up_comp_cache')
 uploaded_scenario_obs = st.session_state.get('up_obs_cache')
@@ -1914,30 +1866,22 @@ if _page == "session":
             st.session_state.trigger_generation = False
             st.session_state.db_session_id = None
             
-            # --- NEW: EASA Compliance Matrix ---
             def evaluate_easa_compliance(session_df, total_dod, max_dod):
                 flags = []
                 phases_present = session_df["PHASES"].tolist()
-                
-                # Check Core Phase Distribution (Takeoff, Approach/Landing)
                 if not any(p in [1, 2] for p in phases_present):
                     flags.append("Missing Phase 1/2 (Pre-flight / Take-off) module.")
                 if not any(p in [6, 7] for p in phases_present):
                     flags.append("Missing Phase 6/7 (Approach / Landing) module.")
-                    
-                # Check Key CBTA Competency Targets
                 all_comps = set(c for comp_list in session_df["COMPETENCIES"] for c in comp_list)
                 if "FPM" not in all_comps and "FPA" not in all_comps:
                     flags.append("Flight Path Management (FPM/FPA) is not actively targeted in this session.")
                 if "PSD" not in all_comps and "WLM" not in all_comps:
                     flags.append("No active targeting of Problem Solving & Decision Making (PSD) or Workload Management (WLM).")
-                    
-                # Check DOD Thresholds
                 if total_dod > max_dod:
                     flags.append(f"Total DOD ({total_dod}) exceeds the recommended maximum ceiling ({max_dod}) for a single evaluation phase.")
                 elif total_dod < (max_dod * 0.5):
                     flags.append(f"Total DOD ({total_dod}) is unusually low, risking insufficient evidence gathering.")
-                    
                 return flags
                 
             st.session_state.compliance_flags = evaluate_easa_compliance(
@@ -1945,15 +1889,11 @@ if _page == "session":
                 st.session_state.final_df["DOD"].sum(), 
                 max_dod_threshold
             )
-            # -----------------------------------
-            
             st.session_state.just_generated = True
             st.rerun()
 
     if st.session_state.pop("just_generated", False):
         st.success("Session Profile Generated!")
-        
-        # Display Compliance Matrix
         c_flags = st.session_state.get("compliance_flags", [])
         if not c_flags:
             st.markdown("<div class='status-badge-ok'>✓ EASA AMC1 ORO.FC.231 Assessment Structure: COMPLIANT</div>", unsafe_allow_html=True)
@@ -1961,54 +1901,6 @@ if _page == "session":
             st.markdown("<div class='status-badge-warn'>⚠️ EASA AMC1 ORO.FC.231 Structure Warnings:</div>", unsafe_allow_html=True)
             for flag in c_flags:
                 st.markdown(f"<div style='font-size:12px; color:{KM_AMBER}; margin-left:14px;'>• {flag}</div>", unsafe_allow_html=True)
-
-
-# Persist the km-header block at the very top of EVERY page, including the splash screen
-_data_ok = df is not None and not df.empty
-_draft_active = ("final_df" in st.session_state) and not st.session_state.get("db_session_id")
-_synced_active = bool(st.session_state.get("db_session_id"))
-_session_label = f"S-{st.session_state['db_session_id']}" if st.session_state.get("db_session_id") else "DRAFT"
-
-_data_ok = df is not None and not df.empty
-_draft_active = ("final_df" in st.session_state) and not st.session_state.get("db_session_id")
-_synced_active = bool(st.session_state.get("db_session_id"))
-_session_label = f"S-{st.session_state['db_session_id']}" if st.session_state.get("db_session_id") else "DRAFT"
-
-header_placeholder.markdown(f"""
-<div class="km-header">
-    <div class="km-header-left">
-        <div class="km-logo">✈️</div>
-        <div>
-            <div class="km-title">SYMSYNC &bull; EBT SUITE</div>
-            <div class="km-subtitle">{st.session_state.get('aircraft_type', 'A320-214')} &middot; {st.session_state.get('session_mode', 'EBT Evaluation & Coaching')} &middot; {st.session_state.get('program_code', 'EBT-2026')}</div>
-        </div>
-    </div>
-    <div class="km-header-right">
-        <div class="km-meta">
-            <div class="km-meta-label">Device</div>
-            <div class="km-meta-value">{st.session_state.get('sim_id', 'KM Malta A320 STD2.2')[:16]}</div>
-        </div>
-        <div class="km-meta">
-            <div class="km-meta-label">Session</div>
-            <div class="km-meta-value km-meta-value-accent">{_session_label}</div>
-        </div>
-        <div class="km-meta">
-            <div class="km-meta-label">Capt</div>
-            <div class="km-meta-value">{st.session_state.get('capt_name', 'Unassigned')}</div>
-        </div>
-        <div class="km-meta">
-            <div class="km-meta-label">F/O</div>
-            <div class="km-meta-value">{st.session_state.get('fo_name', 'Unassigned')}</div>
-        </div>
-        <div class="km-pills">
-            <div class="km-pill"><span class="km-dot {'km-dot-green' if _data_ok else 'km-dot-gray'}"></span>DATA</div>
-            <div class="km-pill"><span class="km-dot {'km-dot-amber' if _draft_active else 'km-dot-gray'}"></span>DRAFT</div>
-            <div class="km-pill"><span class="km-dot {'km-dot-green' if _synced_active else 'km-dot-gray'}"></span>SYNCED</div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
 
 def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_dod, max_dod, mode, capt, fo, sim_id_val, ios_info):
     buffer = io.BytesIO()
@@ -2049,9 +1941,7 @@ def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_
         ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('BOTTOMPADDING', (0, 0), (-1, -1), 3), ('TOPPADDING', (0, 0), (-1, -1), 3), ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
     ]))
     
-    # --- NEW: Generate and Embed Radar Chart ---
     if HAS_MATPLOTLIB and comp_dict:
-        # Calculate session averages for the chart
         comp_totals = {c: [] for c in COMPETENCY_KEYS}
         for s_id, comps in comp_dict.items():
             g = grades_dict.get(s_id, 3)
@@ -2064,7 +1954,6 @@ def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_
         values = list(avgs.values())
         
         if any(values):
-            # Close the polygon
             values += values[:1]
             angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
             angles += angles[:1]
@@ -2079,27 +1968,21 @@ def generate_pdf_briefing(df_session, grades_dict, notes_dict, comp_dict, total_
             ax.set_yticklabels(['1', '2', '3', '4', '5'], color="grey", size=7)
             plt.title("Session Competency Profile", size=10, color="#0284C7", y=1.1)
             
-            # Save to memory buffer
             chart_buffer = io.BytesIO()
             plt.savefig(chart_buffer, format='png', bbox_inches='tight', dpi=150)
             chart_buffer.seek(0)
             plt.close(fig)
             
-            # Append to PDF elements
             elements.append(Spacer(1, 10))
             elements.append(Image(chart_buffer, width=250, height=250))
             elements.append(Spacer(1, 10))
-    # -------------------------------------------
     
     elements.extend([t])
     doc.build(elements)
     buffer.seek(0)
     return buffer
 
-
 if _page == "history":
-    # SESSION HISTORY — two-column layout matching design mockup
-    # Left: session table  |  Right: grade trend + candidate summary
     h_left, h_right = st.columns([2.1, 1])
     with h_left:
         st.markdown(f"<div class='panel-head'><span class='panel-code'>HST</span><span class='panel-title-text'>SESSION HISTORY</span></div>", unsafe_allow_html=True)
@@ -2166,7 +2049,6 @@ if _page == "history":
         else:
             st.caption("Enter a staff number to load candidate history.")
 
-
 if _page == "grading":
     st.markdown("#### 📐 KM Malta Airlines Official Grading Standard")
     st.markdown("Sourced directly from **Operations Manual Part D, §3.1.1.1 (Grading System)**. Reference this before and during grading — every instructor grading against the same published wording is what makes grading consistent across the training department.")
@@ -2187,7 +2069,6 @@ if _page == "grading":
     st.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
     st.markdown("<b>Flight Phase Definitions</b>", unsafe_allow_html=True)
     for p, desc in PHASE_DEFINITIONS.items(): st.markdown(f"<div style='font-size:12px; margin-bottom:3px;'><b>{PHASE_NAMES[p]}:</b> {desc}</div>", unsafe_allow_html=True)
-
 
 if _page == "session":
     with st.container(border=True):
@@ -2223,20 +2104,17 @@ if _page == "session":
         live_metar_str = fetch_live_metar(apt_data['icao'])
         st.markdown(f'<div class="ios-card" style="border-left: 3px solid #0284C7;"><div class="ios-label">Live METAR Feed ({apt_data["icao"]})</div><div style="font-family: \'Geist Mono\', monospace; color: #0284C7; font-size: 13px; margin-top: 4px;">{live_metar_str}</div></div>', unsafe_allow_html=True)
 
-        # --- NEW: Parse METAR for defaults ---
         metar_data = parse_metar_to_ios(live_metar_str)
         default_dir = metar_data.get('dir', 360)
         default_spd = metar_data.get('spd', 0)
         default_gust = metar_data.get('gust', 0)
         default_temp = metar_data.get('temp', 14)
         default_qnh = metar_data.get('qnh', 1013)
-        # -------------------------------------
 
         w_card1, w_card2 = st.columns(2)
         with w_card1:
             st.markdown("<b style='color:#0284C7;'>🌬️ Surface Wind & Atmosphere</b>", unsafe_allow_html=True)
             wc1, wc2, wc3 = st.columns(3)
-            # Binding the widget keys to the ICAO forces Streamlit to accept the new defaults
             with wc1: wind_dir = st.number_input("Wind Dir (°M)", min_value=0, max_value=360, value=default_dir, step=10, key=f"wdir_{apt_data['icao']}")
             with wc2: wind_spd = st.number_input("Wind Speed (kt)", min_value=0, max_value=70, value=default_spd, key=f"wspd_{apt_data['icao']}")
             with wc3: wind_gust = st.number_input("Wind Gust (kt)", min_value=0, max_value=90, value=default_gust, key=f"wgust_{apt_data['icao']}")
@@ -2259,7 +2137,6 @@ if _page == "session":
             with vc1: vis_rvr_str = st.selectbox("Visibility / RVR", ["250.00 km (CAVOK)", "10.00 km", "5000 m", "1500 m", "550 m (CAT I)", "300 m (CAT II)", "125 m (CAT III B)"], index=0)
             with vc2: rwy_lighting = st.selectbox("Runway Lighting", ["Off (0)", "Level 1", "Level 2", "Level 3 (High / Standard)", "Level 4 (Max / LVO)"], index=3)
 
-# Default to generic values if fields aren't populated by interaction logic above yet
 wind_spd = wind_spd if 'wind_spd' in locals() else 0
 wind_gust = wind_gust if 'wind_gust' in locals() else 0
 rcam_code = rcam_code if 'rcam_code' in locals() else "6/6/6 – Dry"
@@ -2268,7 +2145,6 @@ ios_env_summary_str = f"Wind: {wind_str if 'wind_str' in locals() else '360°M/0
 ios_summary_str = f"Apt: {apt_ref if 'apt_ref' in locals() else 'LMML/13'} | GW: {gw_val if 'gw_val' in locals() else 54.6}t (CG {gw_cg if 'gw_cg' in locals() else 29}%) | ZFW: {zfw_val if 'zfw_val' in locals() else 47}t | Fuel: {total_fuel if 'total_fuel' in locals() else 7.6}t | QNH: {qnh_val if 'qnh_val' in locals() else 1013}hPa | Env: {ios_env_summary_str}"
 
 if df is not None: df["TEM_THREAT"], df["TEM_ERROR"] = zip(*df.apply(lambda r: derive_tem_tags(r["EVENT"], r["PHASES"], wind_spd, wind_gust, rcam_code, vis_rvr_str), axis=1))
-
 
 if _page == "session":
     if "final_df" in st.session_state:
@@ -2364,7 +2240,6 @@ if _page == "session":
         if linked_candidate: st.caption(f"✓ Saved to history database (session #{saved_session_id}, linked to staff number).")
         else: st.caption(f"✓ Saved to history database (session #{saved_session_id}) — add a Captain/F.O. staff number above to make this retrievable by candidate history.")
 
-
 if _page == "health":
     st.markdown("#### 🩺 Data Health Check")
     st.caption("Runs the same audit previously done by hand on Scenarios.csv, Keypams.xlsx, and Scenario_Observable_Behaviours.xlsx — duplicate/collision detection, dead rows, and a real coverage breakdown. Re-runs automatically whenever any of the three files change.")
@@ -2415,7 +2290,6 @@ if _page == "health":
                     with st.expander(f"See the {len(cov['none'])} event(s) with no specific data anywhere"):
                         for ev in cov["none"]: st.markdown(f"- {ev}")
             else: st.info("Load Scenarios.csv to see a coverage breakdown.")
-
 
 if _page == "orca":
     st.markdown("#### 📋 OPC & ORCA Workflow Suite (Uploaded Syllabus Analysis & Debrief)")
@@ -2501,7 +2375,6 @@ if _page == "orca":
                         grade_key = f"orc_grade_{e_key}_{s_idx}_{ob_idx}"
                         note_key = f"orc_note_{e_key}_{s_idx}_{ob_idx}"
                         
-                        # --- NEW: Fetch persisted values or defaults ---
                         is_obs = st.session_state.orca_state.get(obs_key, False)
                         cur_grade = st.session_state.orca_state.get(grade_key, 3)
                         cur_note = st.session_state.orca_state.get(note_key, "")
@@ -2664,7 +2537,6 @@ if _page == "orca":
             with st.expander(f"✓ {len(covered)} item(s) with full existing OB coverage — confirmed consistent"):
                 for m in covered: st.markdown(f"- **{m['title']}** → *{m['matched_event']}* ({', '.join(m['existing_ob']['cbta_focus'])})")
 
-
 if _page == "scenarios":
     st.markdown("#### 🎯 Interactive Simulator Scenario Builder & Selector")
     st.markdown("Filter the full scenario matrix below to inspect all available events, DOD levels, and targeted competencies before generating your session.")
@@ -2686,19 +2558,13 @@ if _page == "scenarios":
         st.dataframe(display_df, hide_index=True, height=450)
     else: st.warning("Scenario database not loaded.")
 
-
 if _page == "debrief":
-    # SESSION DEBRIEF — matches design mockup:
-    # Left: radar chart + horizontal grade bars
-    # Right: session result panel + focus areas + export PDF
-
     has_main_session   = "final_df" in st.session_state
     has_uploaded_session = "uploaded_grades_data" in st.session_state
 
     if not (has_main_session or has_uploaded_session):
         st.info("No session data yet. Build a session plan from **Generate EBT Program** or grade an uploaded program.")
     else:
-        # ── Aggregate grades across sources ──────────────────────────────────
         comp_grades = {c: [] for c in COMPETENCY_KEYS}
         source_count = 0
         if has_main_session:
@@ -2726,17 +2592,15 @@ if _page == "debrief":
         s_id         = st.session_state.get("sim_id", "—")
         s_type       = st.session_state.get("session_mode", "EBT Evaluation")[:15]
 
-        # ── Layout ────────────────────────────────────────────────────────────
         d_left, d_right = st.columns([2.1, 1])
 
         with d_left:
             st.markdown(f"<div class='panel-head'><span class='panel-code'>DBF</span><span class='panel-title-text'>COMPETENCY PROFILE</span></div>", unsafe_allow_html=True)
 
-            comp_list = list(COMPETENCY_KEYS.keys())  # APK COM FPM FPA KNO LTW PSD SAW WLM
+            comp_list = list(COMPETENCY_KEYS.keys())
             n = len(comp_list)
             cx, cy, r_max = 200, 200, 150
 
-            # Radar grid
             grid_paths = ""
             for ring in [1,2,3,4,5]:
                 r = r_max * ring / 5
@@ -2746,7 +2610,6 @@ if _page == "debrief":
                     pts.append((cx + r*math.cos(angle), cy - r*math.sin(angle)))
                 grid_paths += f"<polygon points='{" ".join(f"{x:.1f},{y:.1f}" for x,y in pts)}' fill='none' stroke='rgba(255,255,255,0.07)' stroke-width='1'/>"
 
-            # Axis lines
             axis_lines = ""
             for j in range(n):
                 angle = math.pi/2 - 2*math.pi*j/n
@@ -2754,7 +2617,6 @@ if _page == "debrief":
                 ey = cy - r_max*math.sin(angle)
                 axis_lines += f"<line x1='{cx}' y1='{cy}' x2='{ex:.1f}' y2='{ey:.1f}' stroke='rgba(255,255,255,0.10)' stroke-width='1'/>"
 
-            # Data polygon
             data_pts = []
             for j, comp in enumerate(comp_list):
                 angle = math.pi/2 - 2*math.pi*j/n
@@ -2766,7 +2628,6 @@ if _page == "debrief":
             data_poly = f"<polygon points='{poly_pts}' fill='rgba(52,211,153,0.25)' stroke='#34D399' stroke-width='2'/>"
             data_dots = "".join(f"<circle cx='{x:.1f}' cy='{y:.1f}' r='4' fill='#34D399'/>" for x,y in data_pts)
 
-            # Labels
             label_svg = ""
             for j, comp in enumerate(comp_list):
                 angle = math.pi/2 - 2*math.pi*j/n
@@ -2779,7 +2640,6 @@ if _page == "debrief":
                 {grid_paths}{axis_lines}{data_poly}{data_dots}{label_svg}
             </svg>"""
 
-            # Grade bars
             bar_rows = ""
             for comp in comp_list:
                 avg_val = avgs.get(comp, 0)
@@ -2797,14 +2657,12 @@ if _page == "debrief":
                     <div style="width:20px;font-size:13px;font-weight:800;color:{bar_color};text-align:right;">{grade_n if grade_n else "—"}</div>
                 </div>"""
 
-            # Combined left panel: radar + bars side by side
             rad_col, bar_col = st.columns([1, 1])
             with rad_col:
                 st.markdown(radar_svg, unsafe_allow_html=True)
             with bar_col:
                 st.markdown(f"<div style='padding:20px 0;'>{bar_rows}</div>", unsafe_allow_html=True)
 
-            # Inline grade sliders (only for main session)
             if has_main_session:
                 st.markdown(f"<div style='height:8px;'></div>", unsafe_allow_html=True)
                 st.markdown(f"<div style='font-size:10px;color:{KM_TEXT_MUTED};margin-bottom:8px;'>GRADE EACH SLOT (1–5)</div>", unsafe_allow_html=True)
@@ -2820,7 +2678,6 @@ if _page == "debrief":
                     )
 
         with d_right:
-            # SESSION RESULT panel
             st.markdown(f"""
             <div class='panel-head'><span class='panel-code'>RES</span><span class='panel-title-text'>SESSION RESULT</span></div>
             <div style='margin-bottom:12px;'>
@@ -2839,7 +2696,6 @@ if _page == "debrief":
                 </div>
             </div>""", unsafe_allow_html=True)
 
-            # FOCUS AREAS panel
             st.markdown(f"<div class='panel-head'><span class='panel-code'>FOC</span><span class='panel-title-text'>FOCUS AREAS</span></div>", unsafe_allow_html=True)
             focus_items = [(c, round(sum(v)/len(v), 1)) for c, v in comp_grades.items() if v and sum(v)/len(v) < 3]
             focus_items.sort(key=lambda x: x[1])
@@ -2859,7 +2715,6 @@ if _page == "debrief":
 
             st.markdown(f"<div style='height:10px;'></div>", unsafe_allow_html=True)
 
-            # EXPORT button
             if has_main_session and "pdf_data" in st.session_state:
                 st.download_button(
                     label="📄  EXPORT BRIEFING PDF",
