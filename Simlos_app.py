@@ -1290,38 +1290,198 @@ def detect_pdf_format(pdf_file):
     if any(_PDF_IDENT_RE.match(l.strip()) for l in lines): return "fcom_abnormal"
     if (re.search(r"lesson plan", full_text, re.IGNORECASE) and re.search(r"\bEBT\b", full_text) and _LESSON_SECTION_START_RE.search(full_text)):
         return "lesson_plan_syllabus"
+    # Instructor Guide / LPC/OPC programme format:
+    # KM Malta (and similar) documents with "Instructor Guide" in the title,
+    # "LPC/OPC" programme structure, and named Simulator Profiles.
+    if (re.search(r"instructor\s+guide", full_text, re.IGNORECASE) and
+            re.search(r"LPC|OPC", full_text) and
+            re.search(r"simulator\s+profile", full_text, re.IGNORECASE)):
+        return "instructor_guide_lpc"
     return "unknown"
 
-def extract_lesson_plan_items(pdf_file):
+# ── Instructor Guide / LPC-OPC extraction ─────────────────────────────────────
+# Targets three layers of training items from KM Malta-style Instructor Guides:
+#
+#   1. Simulator Profiles — "LPC/OPC 2 Simulator Profile CM 1 (EVAL)"
+#      followed by a "Flight Profile N - [malfunctions]" subtitle.
+#      These are the core scripted scenarios the crew is assessed on.
+#
+#   2. Named training modules — "LVO Check", "Narrow Field Training",
+#      "UPRT", "LOFT/FODP", "Engine Load Reduction Device".
+#      These appear as standalone headed sections and represent the other
+#      assessed training events.
+#
+#   3. TM/CAD checklist items — section-coded manoeuvres like
+#      "2.5.2 M  Take-offs with simulated engine failure between V1 and V2".
+#      These are the regulatory sign-off items from the LPC/OPC checklist.
+#
+# All three output the same block shape as the other extractors so the
+# matching and OB-check pipeline requires no changes.
+_IG_PROFILE_RE = re.compile(
+    r"^(LPC/OPC[\s\w/]*Simulator\s+Profile[\s\w()/-]+)$", re.IGNORECASE
+)
+_IG_FLIGHT_PROFILE_RE = re.compile(
+    r"^Flight\s+Profile\s+\d+\s*[-–]\s*(.+)$", re.IGNORECASE
+)
+_IG_MODULE_RE = re.compile(
+    r"^(LVO\s+Check|Narrow\s+Field\s+Training|UPRT|Upset\s+Prevention|"
+    r"LOFT|FODP|Engine\s+.{0,30}(Load\s+Reduction|Failure\s+with\s+Damage)|"
+    r"Go-Around\s+\(during|Captain.s\s+RHS|ATPL\s+Skills\s+Test)"
+    r"(.{0,60})$", re.IGNORECASE
+)
+_IG_TMCAD_RE = re.compile(
+    r"^(\d+\.\d+[\d.]*\s*M?\s*\*?)\s{2,}(.{10,120})$"
+)
+
+def extract_instructor_guide_items(pdf_file):
+    """Extract training events from a KM Malta-style Instructor Guide PDF.
+    Returns blocks in the standard shape: {"title", "content", "ident_codes"}.
+
+    pypdf collapses visual paragraph blocks onto single long lines, so we
+    use regex search across the full text rather than line-by-line matching."""
     reader = pypdf.PdfReader(pdf_file)
     full_text = "\n".join((page.extract_text() or "") for page in reader.pages)
-    lines = full_text.split("\n")
-    starts = [i for i, l in enumerate(lines) if _LESSON_SECTION_START_RE.search(l)]
-    ends = [i for i, l in enumerate(lines) if _LESSON_SECTION_END_RE.search(l)]
-    best_span, best_len = (0, len(lines)), 0
-    for s in starts:
-        candidate_ends = [e for e in ends if e > s]
-        e = min(candidate_ends) if candidate_ends else len(lines)
-        if e - s > best_len: best_len, best_span = e - s, (s, e)
-    start_idx, end_idx = best_span
-    scoped = lines[start_idx:end_idx]
-    item_positions = []
-    for i, l in enumerate(scoped):
-        m = _LESSON_ITEM_RE.match(l.strip())
-        if m:
-            num = int(m.group(1))
-            if 1 <= num <= 99: item_positions.append((i, num, m.group(2).strip()))
+
     blocks = []
-    for idx, (line_i, num, title) in enumerate(item_positions):
-        full_title = title
-        next_i = line_i + 1
-        if (next_i < len(scoped) and not title.endswith((".", ":", ")", "!")) and not _LESSON_ITEM_RE.match(scoped[next_i].strip())):
-            cont = scoped[next_i].strip()
-            if cont and len(cont) < 80 and not _LESSON_BODY_START_RE.match(cont):
-                full_title = f"{title} {cont}"
-        end_line = item_positions[idx + 1][0] if idx + 1 < len(item_positions) else len(scoped)
-        content = "\n".join(scoped[line_i:end_line]).strip()
-        blocks.append({"title": full_title, "content": content, "ident_codes": [f"ITEM-{num}"]})
+    seen_titles = set()
+
+    def _add(title, content, code):
+        t = title.strip()
+        if not t or t in seen_titles or len(t) < 5:
+            return
+        seen_titles.add(t)
+        blocks.append({"title": t, "content": content.strip(), "ident_codes": [code]})
+
+    # ── Layer 1: Simulator Profiles ───────────────────────────────────────────
+    profile_re = re.compile(
+        r"(LPC/OPC[\s\w/\u2013-]*?Simulator\s+Profile[\s\w()\u2013/-]+?)"
+        r"(?=\s+(?:Flight\s+Profile|Adherence|LPC|Note))",
+        re.IGNORECASE
+    )
+    flight_sub_re = re.compile(
+        r"Flight\s+Profile\s+\d+[-\u2013]\s*([A-Z][^.]{5,120})", re.IGNORECASE
+    )
+    for m in profile_re.finditer(full_text):
+        title = re.sub(r"\s+", " ", m.group(1)).strip()
+        context = full_text[m.start():m.start() + 400]
+        sm = flight_sub_re.search(context)
+        subtitle = re.sub(r"\s+", " ", sm.group(1)).strip()[:120] if sm else ""
+        full_title = title + (f" \u2014 {subtitle}" if subtitle else "")
+        code = f"PROFILE-{len([b for b in blocks if 'PROFILE' in b['ident_codes'][0]]) + 1}"
+        _add(full_title, re.sub(r"\s+", " ", context[:300]).strip(), code)
+
+    # ── Layer 2: Named training modules ───────────────────────────────────────
+    module_patterns = [
+        (r"LVO\s+Check(?:\s+\(Day\s+[\d/]+\))?",                                  "LVO Check"),
+        (r"Narrow\s+Field\s+Training(?:\s+&\s+Check)?(?:\s+\(Day\s+\d\))?",       "Narrow Field Training & Check"),
+        (r"Upset\s+Prevention\s+&\s+Recovery\s+Training\s+\(UPRT\)(?:\s+\(Day\s+\d\))?", "UPRT \u2014 Upset Prevention & Recovery Training"),
+        (r"LOFT/FODP",                                                              "LOFT/FODP"),
+        (r"Engine\s+[\u2013-]\s+Load\s+Reduction\s+Device\s+Activation\s+Training","Engine \u2014 Load Reduction Device Activation Training"),
+        (r"Engine\s+failure\s+with\s+Damage\s+[\u2013-]\s+LT\.FSTD\.\d+",         "Engine Failure with Damage (LT.FSTD)"),
+        (r"Go-Around\s+\(during\s+LPC/OPC\s+Check\)",                              "Go-Around during LPC/OPC Check"),
+        (r"Captain.s\s+RHS\s+LVO\s+check",                                         "Captain's RHS LVO Check"),
+        (r"ATPL\s+Skills\s+Test",                                                   "ATPL Skills Test"),
+    ]
+    for pattern, canonical_title in module_patterns:
+        m = re.search(pattern, full_text, re.IGNORECASE)
+        if m:
+            context = full_text[m.start():m.start() + 500]
+            code = f"MODULE-{len([b for b in blocks if 'MODULE' in b['ident_codes'][0]]) + 1}"
+            _add(canonical_title, re.sub(r"\s+", " ", context).strip()[:400], code)
+
+    # ── Layer 3: TM/CAD checklist items ───────────────────────────────────────
+    # Items are packed onto merged lines: "1.1  Performance... 1.4 M  Use of..."
+    # Split by the section-code pattern to recover individual items.
+    tmcad_split_re = re.compile(
+        r"(\d+\.\d+[\d.]*\s*M?\s*\*?)\s{1,4}([^\d].{5,150}?)(?=\s+\d+\.\d+|\Z)"
+    )
+    tmcad_section_match = re.search(
+        r"TM/CAD/0161.{0,200}?Manoeuvres", full_text, re.DOTALL | re.IGNORECASE
+    )
+    if tmcad_section_match:
+        section_text = full_text[tmcad_section_match.start():tmcad_section_match.start() + 3000]
+        for m in tmcad_split_re.finditer(section_text):
+            section_code = m.group(1).strip()
+            description = re.sub(r"\s+", " ", m.group(2)).strip()
+            if len(description) > 10:
+                _add(
+                    f"{section_code} \u2014 {description}",
+                    f"{section_code} {description}",
+                    f"TMCAD-{section_code.replace(' ', '').replace('*', '')}"
+                )
+
+    return blocks
+
+    blocks = []
+    seen_titles = set()
+
+    def _add(title, content, code):
+        t = title.strip()
+        if not t or t in seen_titles or len(t) < 5:
+            return
+        seen_titles.add(t)
+        blocks.append({"title": t, "content": content.strip(), "ident_codes": [code]})
+
+    # ── Layer 1: Simulator Profiles ───────────────────────────────────────────
+    # Pattern: "LPC/OPC 2 Simulator Profile CM 1 (EVAL)" with optional
+    # "Flight Profile N- [malfunctions]" subtitle embedded on the same line.
+    profile_re = re.compile(
+        r"(LPC/OPC[\s\w/–-]*?Simulator\s+Profile[\s\w()–/-]+?)"
+        r"(?=\s+(?:Flight\s+Profile|Adherence|$|LPC|Note|\Z))",
+        re.IGNORECASE
+    )
+    flight_sub_re = re.compile(
+        r"Flight\s+Profile\s+\d+[-–]\s*([^.]+(?:\.[^F][^l][^i])*)",
+        re.IGNORECASE
+    )
+    for m in profile_re.finditer(full_text):
+        title = re.sub(r"\s+", " ", m.group(1)).strip()
+        # Look for a flight profile subtitle in the next 300 chars
+        context = full_text[m.start():m.start()+400]
+        sm = flight_sub_re.search(context)
+        subtitle = re.sub(r"\s+", " ", sm.group(1)).strip()[:120] if sm else ""
+        full_title = title + (f" — {subtitle}" if subtitle else "")
+        code = f"PROFILE-{len([b for b in blocks if 'PROFILE' in b['ident_codes'][0]]) + 1}"
+        content = re.sub(r"\s+", " ", context[:300]).strip()
+        _add(full_title, content, code)
+
+    # ── Layer 2: Named training modules ───────────────────────────────────────
+    module_patterns = [
+        (r"LVO\s+Check(?:\s+\(Day\s+[\d/]+\))?", "LVO Check"),
+        (r"Narrow\s+Field\s+Training(?:\s+&\s+Check)?(?:\s+\(Day\s+\d\))?", "Narrow Field Training & Check"),
+        (r"Upset\s+Prevention\s+&\s+Recovery\s+Training\s+\(UPRT\)(?:\s+\(Day\s+\d\))?", "UPRT — Upset Prevention & Recovery Training"),
+        (r"LOFT/FODP(?:\s+SIMULATOR\s+SET\s+UP)?", "LOFT/FODP"),
+        (r"Engine\s+[–-]\s+Load\s+Reduction\s+Device\s+Activation\s+Training", "Engine — Load Reduction Device Activation Training"),
+        (r"Engine\s+failure\s+with\s+Damage\s+[–-]\s+LT\.FSTD\.\d+", "Engine Failure with Damage (LT.FSTD)"),
+        (r"Go-Around\s+\(during\s+LPC/OPC\s+Check\)", "Go-Around during LPC/OPC Check"),
+        (r"Captain.s\s+RHS\s+LVO\s+check", "Captain's RHS LVO Check"),
+        (r"ATPL\s+Skills\s+Test", "ATPL Skills Test"),
+    ]
+    for pattern, canonical_title in module_patterns:
+        m = re.search(pattern, full_text, re.IGNORECASE)
+        if m:
+            context = full_text[m.start():m.start()+500]
+            content = re.sub(r"\s+", " ", context).strip()[:400]
+            code = f"MODULE-{len([b for b in blocks if 'MODULE' in b['ident_codes'][0]]) + 1}"
+            _add(canonical_title, content, code)
+
+    # ── Layer 3: TM/CAD checklist items ───────────────────────────────────────
+    # Items are packed onto merged lines: "1.1  Performance calculation 1.4 M  Use of checklist..."
+    # Split by the section-code pattern to recover individual items.
+    tmcad_split_re = re.compile(r"(\d+\.\d+[\d.]*\s*M?\s*\*?)\s{1,4}([^\d].{5,150}?)(?=\s+\d+\.\d+|\Z)")
+    # Find the TM/CAD section - look for TM/CAD/0161 as anchor
+    tmcad_section_match = re.search(r"TM/CAD/0161.{0,200}?Manoeuvres", full_text, re.DOTALL | re.IGNORECASE)
+    if tmcad_section_match:
+        # Extract the checklist portion (up to ~3000 chars after the header)
+        section_text = full_text[tmcad_section_match.start():tmcad_section_match.start() + 3000]
+        for m in tmcad_split_re.finditer(section_text):
+            section_code = m.group(1).strip()
+            description = re.sub(r"\s+", " ", m.group(2)).strip()
+            if len(description) > 10:
+                full_title = f"{section_code} — {description}"
+                code = f"TMCAD-{section_code.replace(' ', '').replace('*', '')}"
+                _add(full_title, f"{section_code} {description}", code)
+
     return blocks
 
 def extract_scenarios_auto(pdf_file):
@@ -1329,6 +1489,7 @@ def extract_scenarios_auto(pdf_file):
     if hasattr(pdf_file, "seek"): pdf_file.seek(0)
     if fmt == "fcom_abnormal": return fmt, extract_fcom_procedures(pdf_file)
     elif fmt == "lesson_plan_syllabus": return fmt, extract_lesson_plan_items(pdf_file)
+    elif fmt == "instructor_guide_lpc": return fmt, extract_instructor_guide_items(pdf_file)
     else: return fmt, []
 
 def match_extracted_titles_to_scenarios(extracted_blocks, scenario_events):
@@ -1594,15 +1755,15 @@ if _page == "splash":
 
     qc1, qc2, qc3 = st.columns(3)
     with qc1:
-        if st.button("🚀  Launch Program Generator", key="splash_btn_gen", use_container_width=True):
+        if st.button("🚀  Launch Program Generator", key="splash_btn_gen"):
             st.session_state.nav_page = "session"
             st.rerun()
     with qc2:
-        if st.button("📥  Open ORCA & Upload Suite", key="splash_btn_orca", use_container_width=True):
+        if st.button("📥  Open ORCA & Upload Suite", key="splash_btn_orca"):
             st.session_state.nav_page = "orca"
             st.rerun()
     with qc3:
-        if st.button("📊  View Session Debrief", key="splash_btn_deb", use_container_width=True):
+        if st.button("📊  View Session Debrief", key="splash_btn_deb"):
             st.session_state.nav_page = "debrief"
             st.rerun()
 
@@ -2050,16 +2211,33 @@ if _page == "history":
             st.caption("Enter a staff number to load candidate history.")
 
 if _page == "grading":
-    st.markdown("#### 📐 KM Malta Airlines Official Grading Standard")
-    st.markdown("Sourced directly from **Operations Manual Part D, §3.1.1.1 (Grading System)**. Reference this before and during grading — every instructor grading against the same published wording is what makes grading consistent across the training department.")
-    st.markdown("<b>1–5 Grading Scale</b>", unsafe_allow_html=True)
+    grd_left, grd_right = st.columns([2, 1])
+    with grd_left:
+        st.markdown("<div class='panel-head'><span class='panel-code'>GRD</span><span class='panel-title-text'>OM-D GRADING STANDARD · KM MALTA AIRLINES</span></div>", unsafe_allow_html=True)
+        st.caption("Operations Manual Part D, §3.1.1.1 — the published wording every instructor grades against.")
+    with grd_right:
+        st.markdown("<div class='panel-head'><span class='panel-code'>COM</span><span class='panel-title-text'>9 EASA CORE COMPETENCIES</span></div>", unsafe_allow_html=True)
+    grd_left2, grd_right2 = st.columns([2, 1])
+    with grd_left2:
+        with st.container(border=True):
+            st.markdown("<b>1–5 Grading Scale</b>", unsafe_allow_html=True)
     for g in [5, 4, 3, 2, 1]:
         badge = "status-badge-ok" if g >= 2 else "status-badge-warn"
         st.markdown(f'<div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:6px;"><div class="{badge}" style="min-width:150px;">Grade {g} ({GRADE_LABELS[g]})</div><div style="font-size:12.5px; opacity:0.9;">{GRADE_DESCRIPTORS[g]}</div></div>', unsafe_allow_html=True)
     st.markdown("<div style='font-size:11px; opacity:0.65; margin-top:4px;'>Grade 2 is a pass, not a fail — but OM-D requires it to be reviewed by DCT. Grade 1 triggers the Below Adequate Grading process (APP.5.1.11 during training/LIFUS, APP.5.1.12 during a check).</div>", unsafe_allow_html=True)
     st.markdown("<div class='thin-divider'></div>", unsafe_allow_html=True)
-    st.markdown("<b>Core Competencies & Key Performance Indicators (KPIs)</b>", unsafe_allow_html=True)
-    sel_comp_ref = st.selectbox("View KPIs and per-grade wording for:", options=list(COMPETENCY_KEYS.keys()), format_func=lambda x: f"{x} – {COMPETENCY_KEYS[x]}", key="grading_standard_comp_select")
+    with grd_right2:
+        with st.container(border=True):
+            for code, name in COMPETENCY_KEYS.items():
+                color_map = {"APK":"#F5A623","COM":"#60A5FA","FPM":"#34D399","FPA":"#A78BFA","KNO":"#F87171","LTW":"#2DD4BF","PSD":"#FBB824","SAW":"#F5A623","WLM":"#818CF8"}
+                bg_map = {"APK":"rgba(245,166,35,.15)","COM":"rgba(96,165,250,.15)","FPM":"rgba(52,211,153,.15)","FPA":"rgba(167,139,250,.15)","KNO":"rgba(248,113,113,.15)","LTW":"rgba(45,212,191,.15)","PSD":"rgba(251,184,36,.15)","SAW":"rgba(245,166,35,.15)","WLM":"rgba(129,140,248,.15)"}
+                c = color_map.get(code, KM_AMBER)
+                bg = bg_map.get(code, KM_AMBER_DIM)
+                st.markdown(f"<div style='display:flex;align-items:center;gap:8px;padding:6px 8px;background:{KM_PANEL_ALT};border-radius:5px;margin-bottom:4px;'><span style='background:{bg};color:{c};font-size:8px;font-weight:800;padding:2px 6px;border-radius:10px;'>{code}</span><span style='font-size:11px;color:{KM_TEXT};'>{name}</span></div>", unsafe_allow_html=True)
+    with grd_left2:
+        with st.container(border=True):
+            st.markdown("<b>Competency KPIs & Per-Grade Wording</b>", unsafe_allow_html=True)
+            sel_comp_ref = st.selectbox("View KPIs and per-grade wording for:", options=list(COMPETENCY_KEYS.keys()), format_func=lambda x: f"{x} – {COMPETENCY_KEYS[x]}", key="grading_standard_comp_select")
     st.markdown("<div style='font-size:11.5px; opacity:0.7; margin-bottom:6px;'>Key Performance Indicators:</div>", unsafe_allow_html=True)
     for kpi in COMPETENCY_KPIS.get(sel_comp_ref, []): st.markdown(f"<div style='font-size:12.5px; margin-bottom:3px;'>• {kpi}</div>", unsafe_allow_html=True)
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
@@ -2241,8 +2419,8 @@ if _page == "session":
         else: st.caption(f"✓ Saved to history database (session #{saved_session_id}) — add a Captain/F.O. staff number above to make this retrievable by candidate history.")
 
 if _page == "health":
-    st.markdown("#### 🩺 Data Health Check")
-    st.caption("Runs the same audit previously done by hand on Scenarios.csv, Keypams.xlsx, and Scenario_Observable_Behaviours.xlsx — duplicate/collision detection, dead rows, and a real coverage breakdown. Re-runs automatically whenever any of the three files change.")
+    st.markdown("<div class='panel-head'><span class='panel-code'>HLT</span><span class='panel-title-text'>DATA HEALTH CHECK</span></div>", unsafe_allow_html=True)
+    st.caption("Duplicate/collision detection, dead rows, and real coverage breakdown — re-runs automatically whenever any source file changes.")
     health = compute_data_health_report(scenarios_source, competency_source, scenario_obs_source, _file_cache_token(scenarios_source), _file_cache_token(competency_source), _file_cache_token(scenario_obs_source))
 
     def _render_issue_list(issues, empty_message):
@@ -2292,11 +2470,11 @@ if _page == "health":
             else: st.info("Load Scenarios.csv to see a coverage breakdown.")
 
 if _page == "orca":
-    st.markdown("#### 📋 OPC & ORCA Workflow Suite (Uploaded Syllabus Analysis & Debrief)")
-    st.markdown("Upload your operator simulator syllabus PDF to analyze structured syllabus exercises. Each Observable Behaviour below gets its own Observe → Record → Classify/Assess entry, tied to the same published 1-5 grading scale used elsewhere in the app.")
+    st.markdown("<div class='panel-head'><span class='panel-code'>ORC</span><span class='panel-title-text'>UPLOAD OPERATOR PROGRAM — OPC / ORCA WORKFLOW</span></div>", unsafe_allow_html=True)
+    st.caption("Upload any operator syllabus PDF — FCOM-style procedures or lesson-plan format. Format is detected automatically. Exercises are extracted, matched against Scenarios.csv, and checked against the OB library.")
 
     with st.container(border=True):
-        st.markdown("##### 📄 Simulator Program PDF Uploader & Exercise Detection")
+        st.markdown("<div class='panel-head'><span class='panel-code'>EXT</span><span class='panel-title-text'>PROGRAM PDF — UPLOAD & EXERCISE DETECTION</span></div>", unsafe_allow_html=True)
         if not HAS_PYPDF: st.warning("⚠️ `pypdf` library is not installed in your current environment. Running in default exercise mode.")
         uploaded_prog_pdf = st.file_uploader("Upload Operator Simulator Syllabus / Lesson Plan (PDF)", type=["pdf"], key="prog_pdf_uploader_main")
         parsed_exercise_keys = list(PROGRAM_SYLLABUS_EXERCISES.keys())
@@ -2428,7 +2606,7 @@ if _page == "orca":
             csv_up_export = df_uploaded_session.to_csv(index=False)
             st.download_button(label="📥 Download Uploaded Syllabus Schedule (CSV)", data=csv_up_export, file_name="uploaded_syllabus_session_report.csv", mime="text/csv", key="dl_up_csv")
         with col_up_pdf:
-            pdf_up_data = generate_pdf_briefing(pd.DataFrame([{"SLOT": i+1, "PHASE_NAME": f"Syllabus Ph {PROGRAM_SYLLABUS_EXERCISES[k]['phase']}", "EVENT": PROGRAM_SYLLABUS_EXERCISES[k]["title"], "DOD": 2, "ROLE": "PF / PM"} for i, k in enumerate(selected_ex_keys)]), {i+1: uploaded_grades[k] for i, k in enumerate(selected_ex_keys)}, {i+1: uploaded_notes[k] for i, k in enumerate(selected_ex_keys)}, {i+1: uploaded_comp_mapping[k] for i, k in enumerate(selected_ex_keys)}, len(selected_ex_keys) * 2, len(selected_ex_keys) * 3, "Syllabus Program Evaluation", capt_name, fo_name, sim_id, "Uploaded PDF Syllabus Review")
+            pdf_up_data = generate_pdf_briefing(pd.DataFrame([{"SLOT": i+1, "PHASE_NAME": f"Syllabus Ph {PROGRAM_SYLLABUS_EXERCISES[k]['phase']}", "EVENT": PROGRAM_SYLLABUS_EXERCISES[k]["title"], "DOD": 2, "ROLE": "PF / PM"} for i, k in enumerate(selected_ex_keys)]), {i+1: uploaded_grades[k] for i, k in enumerate(selected_ex_keys)}, {i+1: uploaded_notes[k] for i, k in enumerate(selected_ex_keys)}, {i+1: uploaded_comp_mapping[k] for i, k in enumerate(selected_ex_keys)}, len(selected_ex_keys) * 2, len(selected_ex_keys) * 3, "Syllabus Program Evaluation", st.session_state.get("capt_name", "—"), st.session_state.get("fo_name", "—"), st.session_state.get("sim_id", "—"), "Uploaded PDF Syllabus Review")
             st.download_button(label="📄 Download Uploaded Syllabus EBT PDF Report", data=pdf_up_data, file_name="uploaded_syllabus_ebt_record.pdf", mime="application/pdf", key="dl_up_pdf")
 
         slots_for_db_up = []
@@ -2441,7 +2619,7 @@ if _page == "orca":
                     if observed:
                         comp_entries.append({"code": ob.get("comp", "GEN"), "grade": st.session_state.get(f"orc_grade_{k}_{s_idx}_{ob_idx}", 3), "observed": True, "note": st.session_state.get(f"orc_note_{k}_{s_idx}_{ob_idx}", "")})
             slots_for_db_up.append({"slot_number": i + 1, "event_title": ex_data["title"], "phase_number": ex_data.get("phase"), "dod": None, "role_focus": "PF / PM", "instructor_grade": uploaded_grades.get(k), "instructor_notes": uploaded_notes.get(k, ""), "competencies": comp_entries})
-        saved_up_session_id, linked_up_candidate = save_session_to_history(st.session_state.get("db_session_id_uploaded"), sim_id, "Uploaded Syllabus Review", capt_staff_no, capt_name, fo_staff_no, fo_name, len(selected_ex_keys) * 2, len(selected_ex_keys) * 3, "uploaded_syllabus", slots_for_db_up)
+        saved_up_session_id, linked_up_candidate = save_session_to_history(st.session_state.get("db_session_id_uploaded"), st.session_state.get("sim_id", "—"), "Uploaded Syllabus Review", st.session_state.get("capt_staff_no", ""), st.session_state.get("capt_name", "—"), st.session_state.get("fo_staff_no", ""), st.session_state.get("fo_name", "—"), len(selected_ex_keys) * 2, len(selected_ex_keys) * 3, "uploaded_syllabus", slots_for_db_up)
         st.session_state.db_session_id_uploaded = saved_up_session_id
         if linked_up_candidate: st.caption(f"✓ Saved to history database (session #{saved_up_session_id}, linked to staff number).")
         else: st.caption(f"✓ Saved to history database (session #{saved_up_session_id}) — add a Captain/F.O. staff number in Session Setup to make this retrievable by candidate history.")
@@ -2463,8 +2641,8 @@ if _page == "orca":
                 st.error(f"Couldn't read this PDF: {e}")
 
             if extracted is not None:
-                format_labels = {"fcom_abnormal": "FCOM-style abnormal/emergency procedures reference", "lesson_plan_syllabus": "Lesson-plan / training-syllabus document", "unknown": None}
-                if detected_format == "unknown": st.warning("Couldn't identify this PDF's layout — it doesn't match either recognized format. Extraction was skipped rather than guessing.")
+                format_labels = {"fcom_abnormal": "FCOM-style abnormal/emergency procedures reference", "lesson_plan_syllabus": "Lesson-plan / training-syllabus document", "instructor_guide_lpc": "Instructor Guide / LPC-OPC programme (KM Malta-style)", "unknown": None}
+                if detected_format == "unknown": st.warning("Couldn't identify this PDF's layout — it doesn't match any of the three recognized formats (FCOM abnormal procedures, lesson-plan/syllabus, or Instructor Guide/LPC-OPC programme). Extraction was skipped rather than guessing.")
                 else: st.markdown(f"<div class='ds-row'><span>Detected format</span><span class='ds-status-loaded'>{format_labels[detected_format].upper()}</span></div>", unsafe_allow_html=True)
                 
                 if df is not None and not df.empty:
@@ -2538,8 +2716,8 @@ if _page == "orca":
                 for m in covered: st.markdown(f"- **{m['title']}** → *{m['matched_event']}* ({', '.join(m['existing_ob']['cbta_focus'])})")
 
 if _page == "scenarios":
-    st.markdown("#### 🎯 Interactive Simulator Scenario Builder & Selector")
-    st.markdown("Filter the full scenario matrix below to inspect all available events, DOD levels, and targeted competencies before generating your session.")
+    st.markdown("<div class='panel-head'><span class='panel-code'>SCN</span><span class='panel-title-text'>SCENARIO BROWSER</span></div>", unsafe_allow_html=True)
+    st.caption("Filter the full scenario matrix — all events, DOD levels, and targeted competencies.")
     if df is not None:
         f_col1, f_col2, f_col3 = st.columns(3)
         with f_col1: f_phase = st.selectbox("Filter by Phase", options=["Any"] + ALL_PHASE_KEYS, format_func=lambda x: x if x == "Any" else PHASE_NAMES[x], key="sel_filter_phase")
